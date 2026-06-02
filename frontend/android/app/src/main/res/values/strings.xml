@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Receipt Taker</string>
+    <string name="title_activity_main">Receipt Taker</string>
+    <string name="package_name">com.receipttaker.app</string>
+    <string name="custom_url_scheme">com.receipttaker.app</string>
+</resources>

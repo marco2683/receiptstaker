@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+frontend/dist/
+backend/dist/
+
+# Environment files (contain secrets)
+.env
+.env.local
+backend/.env
+
+# Data (generated at runtime)
+data/
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Capacitor native build artifacts (keep source, ignore builds)
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/android/build/
+frontend/android/.idea/
+frontend/android/local.properties
+frontend/ios/App/Pods/
+frontend/ios/App/build/
+frontend/ios/App/App.xcworkspace/xcuserdata/
+frontend/ios/App/DerivedData/
+
+# Temp files
+*.log
+uploads/
