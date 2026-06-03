@@ -1,6 +1,13 @@
 import path from 'path';
 import fs from 'fs';
-import sharp from 'sharp';
+
+// Sharp is optional — used for image optimization but not required
+let sharp: any = null;
+try {
+  sharp = require('sharp');
+} catch {
+  console.log('⚠️  sharp not available — receipts will be stored without optimization');
+}
 
 const DATA_DIR = path.resolve(__dirname, '../../../data');
 const RECEIPTS_DIR = path.join(DATA_DIR, process.env.RECEIPTS_FOLDER || 'receipts');
@@ -20,7 +27,7 @@ export async function storeReceipt(
   const filename = `${dateFlat}_${cleanVendor}_${cleanDesc}${targetExt}`;
   const targetPath = path.join(targetDir, filename);
 
-  if (targetExt !== '.pdf') {
+  if (targetExt !== '.pdf' && sharp) {
     try {
       await sharp(sourcePath)
         .resize(2000, 3000, { fit: 'inside', withoutEnlargement: true })
