@@ -1,165 +1,153 @@
 import { useEffect, useState } from 'react'
-import { listReceipts, deleteReceipt, getReceiptImageUrl, ReceiptRecord } from '../services/api'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { listReceipts, ReceiptRecord } from '../services/api'
 import type { AddToast } from '../components/Toast'
+
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 interface Props { addToast: AddToast }
 
 export default function History({ addToast }: Props) {
-  const [receipts, setReceipts] = useState<ReceiptRecord[]>([])
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const [allReceipts, setAllReceipts] = useState<ReceiptRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<ReceiptRecord | null>(null)
 
-  useEffect(() => { load() }, [])
+  const filterYear = searchParams.get('year') ? Number(searchParams.get('year')) : null
+  const filterMonth = searchParams.get('month') !== null ? Number(searchParams.get('month')) : null
 
-  async function load() {
-    try {
-      const data = await listReceipts()
-      setReceipts(data)
-    } catch {
-      addToast('error', 'Failed to load receipts')
-    } finally {
-      setLoading(false)
-    }
+  useEffect(() => {
+    listReceipts()
+      .then(setAllReceipts)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  // Filter receipts
+  const filtered = allReceipts.filter(r => {
+    const d = new Date(r.date)
+    if (filterYear !== null && d.getFullYear() !== filterYear) return false
+    if (filterMonth !== null && d.getMonth() !== filterMonth) return false
+    return true
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+  const total = filtered.reduce((s, r) => s + (r.amount_inc_gst || 0), 0)
+  const totalGst = filtered.reduce((s, r) => s + (r.gst || 0), 0)
+  const uniqueVendors = new Set(filtered.map(r => r.vendor)).size
+
+  const periodLabel = filterYear !== null && filterMonth !== null
+    ? `${MONTHS[filterMonth]} ${filterYear}`
+    : filterYear !== null
+    ? `${filterYear}`
+    : 'All Time'
+
+  function exportCSV() {
+    if (filtered.length === 0) return
+    const headers = ['Date','Vendor','Description','Category','Sub Category','Amount (inc GST)','GST','Business %','Notes']
+    const rows = filtered.map(r => [
+      r.date, r.vendor, r.description, r.category, r.sub_category,
+      r.amount_inc_gst.toFixed(2), (r.gst || 0).toFixed(2),
+      ((r.business_pct || 0) * 100).toFixed(0) + '%',
+      (r.notes || '').replace(/,/g, ';')
+    ])
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `receipts_${periodLabel.replace(/\s/g, '_')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    addToast('success', `📄 CSV exported: ${filtered.length} receipts`)
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this receipt?')) return
-    try {
-      await deleteReceipt(id)
-      setReceipts(prev => prev.filter(r => r.id !== id))
-      setSelected(null)
-      addToast('success', 'Receipt deleted')
-    } catch {
-      addToast('error', 'Failed to delete')
-    }
+  function emailCSV() {
+    if (filtered.length === 0) return
+    const subject = `Receipts - ${periodLabel}`
+    const body = filtered.map(r =>
+      `${r.date} | ${r.vendor} | $${r.amount_inc_gst.toFixed(2)} | ${r.sub_category || r.category}`
+    ).join('%0A')
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${body}`
+    addToast('info', '📧 Opening email client...')
   }
 
-  function formatDate(d: string): string {
-    return new Date(d).toLocaleDateString('en-AU', {
-      day: 'numeric', month: 'short', year: 'numeric'
-    })
-  }
+  return (
+    <div className="page-enter">
+      {/* Period header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+        {(filterYear !== null || filterMonth !== null) && (
+          <button className="btn btn-ghost" onClick={() => navigate('/')} style={{ padding: '4px 8px', fontSize: '1.2rem' }}>
+            ←
+          </button>
+        )}
+        <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>{periodLabel}</h2>
+      </div>
 
-  if (loading) {
-    return (
-      <div className="page-enter">
+      {loading ? (
         <div className="empty-state">
           <div className="processing-spinner" style={{ margin: '0 auto' }}></div>
         </div>
-      </div>
-    )
-  }
-
-  // Detail view
-  if (selected) {
-    return (
-      <div className="page-enter">
-        <button className="btn btn-ghost" onClick={() => setSelected(null)}
-          style={{ marginBottom: '12px' }} id="btn-back">
-          ← Back to list
-        </button>
-
-        <div className="card" style={{ marginBottom: '16px' }}>
-          {selected.receipt_filename && (
-            <div className="scan-preview" style={{ marginBottom: '16px' }}>
-              <img src={getReceiptImageUrl(selected.id)} alt="Receipt" />
+      ) : filtered.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon">📋</div>
+          <h3>No receipts</h3>
+          <p>No receipts found for {periodLabel}</p>
+        </div>
+      ) : (
+        <>
+          {/* Totals card */}
+          <div className="history-totals">
+            <div className="totals-row">
+              <span className="label">Receipts</span>
+              <span className="value">{filtered.length}</span>
             </div>
-          )}
-
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '4px' }}>
-            {selected.vendor}
-          </h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-            {formatDate(selected.date)} · {selected.sub_category || selected.category}
-          </p>
-
-          <div className="confirm-summary">
-            {selected.description && (
-              <div className="confirm-row">
-                <span className="label">Description</span>
-                <span className="value">{selected.description}</span>
-              </div>
-            )}
-            <div className="confirm-row">
-              <span className="label">Category</span>
-              <span className="value">{selected.category?.replace(/_/g, ' ')}</span>
+            <div className="totals-row">
+              <span className="label">Vendors</span>
+              <span className="value">{uniqueVendors}</span>
             </div>
-            {selected.sub_category && (
-              <div className="confirm-row">
-                <span className="label">Sub Category</span>
-                <span className="value">{selected.sub_category}</span>
-              </div>
-            )}
-            <div className="confirm-row total">
-              <span className="label">Amount (inc GST)</span>
-              <span className="value">${selected.amount_inc_gst.toFixed(2)}</span>
+            <div className="totals-row">
+              <span className="label">GST Claimed</span>
+              <span className="value">${totalGst.toFixed(2)}</span>
             </div>
-            {selected.gst !== null && (
-              <div className="confirm-row">
-                <span className="label">GST</span>
-                <span className="value">${selected.gst?.toFixed(2)}</span>
-              </div>
-            )}
-            <div className="confirm-row">
-              <span className="label">Business %</span>
-              <span className="value">{((selected.business_pct || 1) * 100).toFixed(0)}%</span>
-            </div>
-            <div className="confirm-row">
-              <span className="label">Deductible</span>
-              <span className="value">${((selected.amount_inc_gst - (selected.gst || selected.amount_inc_gst/11)) * (selected.business_pct || 1)).toFixed(2)}</span>
-            </div>
-            {selected.notes && (
-              <div className="confirm-row">
-                <span className="label">Notes</span>
-                <span className="value">{selected.notes}</span>
-              </div>
-            )}
-            <div className="confirm-row">
-              <span className="label">ID</span>
-              <span className="value" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                {selected.id}
-              </span>
+            <div className="totals-row grand">
+              <span className="label">Total (inc GST)</span>
+              <span className="value">${total.toFixed(2)}</span>
             </div>
           </div>
 
-          <button className="btn btn-danger btn-block" onClick={() => handleDelete(selected.id)}
-            id="btn-delete">
-            🗑 Delete Receipt
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // List view
-  return (
-    <div className="page-enter">
-      <p className="section-title">All Receipts ({receipts.length})</p>
-
-      {receipts.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon">📋</div>
-          <h3>No receipts yet</h3>
-          <p>Your receipt history will appear here</p>
-        </div>
-      ) : (
-        <div className="receipt-list">
-          {receipts.map(r => (
-            <div key={r.id} className="receipt-item" onClick={() => setSelected(r)}>
-              <div className="receipt-icon">
-                {r.receipt_filename ? '📸' : '✏️'}
-              </div>
-              <div className="receipt-info">
-                <div className="receipt-vendor">{r.vendor}</div>
-                <div className="receipt-meta">
-                  {formatDate(r.date)} · <span className="badge">{r.sub_category || r.category}</span>
+          {/* Receipt list */}
+          <p className="section-title">{filtered.length} receipt{filtered.length !== 1 ? 's' : ''}</p>
+          <div className="receipt-list">
+            {filtered.map(r => (
+              <div key={r.id} className={`receipt-item ${r.notes?.includes('LOW CONFIDENCE') ? 'needs-review' : ''}`}>
+                <div className="receipt-icon">🧾</div>
+                <div className="receipt-info">
+                  <div className="receipt-vendor">{r.vendor}</div>
+                  <div className="receipt-meta">
+                    {formatDate(r.date)} · {r.sub_category || r.category}
+                  </div>
                 </div>
+                <div className="receipt-amount">${r.amount_inc_gst.toFixed(2)}</div>
               </div>
-              <div className="receipt-amount">${r.amount_inc_gst.toFixed(2)}</div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+
+          {/* Export buttons */}
+          <div className="history-actions">
+            <button className="btn btn-primary" onClick={exportCSV} id="export-csv">
+              📄 Export CSV
+            </button>
+            <button className="btn btn-secondary" onClick={emailCSV} id="email-csv">
+              📧 Email CSV
+            </button>
+          </div>
+        </>
       )}
     </div>
   )
+}
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 }

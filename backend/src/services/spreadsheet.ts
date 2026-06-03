@@ -360,8 +360,22 @@ export async function appendReceiptRow(receipt: ReceiptRow): Promise<number> {
   }
 
   row.commit();
-  await workbook.xlsx.writeFile(SPREADSHEET_PATH);
-  console.log(`📊 Row ${nextRow} written to spreadsheet (confidence: ${receipt.confidence})`);
+
+  // Retry logic for OneDrive file locking (EBUSY errors)
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await workbook.xlsx.writeFile(SPREADSHEET_PATH);
+      console.log(`📊 Row ${nextRow} written to spreadsheet (confidence: ${receipt.confidence})`);
+      return nextRow;
+    } catch (err: any) {
+      if (err.code === 'EBUSY' && attempt < 5) {
+        console.log(`⏳ Spreadsheet locked by OneDrive, retrying (${attempt}/5)...`);
+        await new Promise(r => setTimeout(r, attempt * 1000));
+      } else {
+        throw err;
+      }
+    }
+  }
   return nextRow;
 }
 

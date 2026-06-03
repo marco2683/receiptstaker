@@ -32,16 +32,16 @@ export async function storeReceipt(
         .jpeg({ quality: 85 })
         .toFile(targetPath.replace(targetExt, '.jpg'));
       if (fs.existsSync(sourcePath)) fs.unlinkSync(sourcePath);
-      return filename.replace(targetExt, '.jpg');
+      return `${year}/${month}/${filename.replace(targetExt, '.jpg')}`;
     } catch {
       fs.copyFileSync(sourcePath, targetPath);
       if (fs.existsSync(sourcePath) && sourcePath !== targetPath) fs.unlinkSync(sourcePath);
-      return filename;
+      return `${year}/${month}/${filename}`;
     }
   } else {
     fs.copyFileSync(sourcePath, targetPath);
     if (fs.existsSync(sourcePath) && sourcePath !== targetPath) fs.unlinkSync(sourcePath);
-    return filename;
+    return `${year}/${month}/${filename}`;
   }
 }
 
