@@ -6,6 +6,7 @@ import Scan from './pages/Scan'
 import Manual from './pages/Manual'
 import History from './pages/History'
 import Toast, { ToastData } from './components/Toast'
+import * as Icon from './components/Icons'
 
 export default function App() {
   const [toasts, setToasts] = useState<ToastData[]>([])
@@ -24,7 +25,7 @@ export default function App() {
         <header className="header">
           <div className="header-inner">
             <div className="header-logo">
-              <div className="logo-icon">🧾</div>
+              <div className="logo-icon"><Icon.Receipt size={18} color="white" /></div>
               <h1>Receipt Taker</h1>
             </div>
           </div>
