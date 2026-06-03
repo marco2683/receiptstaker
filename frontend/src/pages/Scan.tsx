@@ -1,18 +1,18 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera'
 import { Capacitor } from '@capacitor/core'
-import { scanReceipt, confirmReceipt, ReceiptData } from '../services/api'
+import { scanReceipt, confirmReceipt, ReceiptData, fetchCategories, CategoryMap } from '../services/api'
 import type { AddToast } from '../components/Toast'
 
 interface Props { addToast: AddToast }
 
-const CATEGORIES = [
-  'Materials & Supplies', 'Tools & Equipment', 'Office Supplies',
-  'Travel & Transport', 'Meals & Entertainment', 'Professional Services',
-  'Utilities', 'Insurance', 'Rent & Property', 'Vehicle & Fuel', 'Other'
-]
-
 type Step = 'capture' | 'processing' | 'confirm' | 'success'
+
+function formatCatName(cat: string): string {
+  return cat.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    .replace('Expense', 'Exp.')
+    .replace('Contributions', 'Contrib.')
+}
 
 export default function Scan({ addToast }: Props) {
   const [step, setStep] = useState<Step>('capture')
@@ -22,7 +22,14 @@ export default function Scan({ addToast }: Props) {
   const [tempFile, setTempFile] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [editData, setEditData] = useState<Record<string, string>>({})
+  const [categories, setCategories] = useState<CategoryMap>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    fetchCategories().then(setCategories).catch(() => {})
+  }, [])
+
+  const subCategories = categories[editData.category] || []
 
   async function handleFile(f: File) {
     setFile(f)
@@ -38,11 +45,11 @@ export default function Scan({ addToast }: Props) {
         date: d.date || '',
         vendor: d.vendor || '',
         description: d.description || '',
-        amountExGst: d.subtotal?.toString() || '',
+        amountIncGst: d.amountIncGst?.toString() || '',
         gst: d.gst?.toString() || '',
-        total: d.total?.toString() || '',
-        category: d.category_guess || d.category || 'Other',
-        paymentMethod: d.payment_method || d.paymentMethod || '',
+        category: d.category || 'OPERATING_EXPENSE',
+        subCategory: d.subCategory || '',
+        businessPct: d.businessPct?.toString() || '1',
         notes: '',
       })
       setStep('confirm')
@@ -75,7 +82,6 @@ export default function Scan({ addToast }: Props) {
       })
 
       if (photo.base64String) {
-        // Convert base64 to File for the existing upload flow
         const byteString = atob(photo.base64String)
         const ab = new ArrayBuffer(byteString.length)
         const ia = new Uint8Array(ab)
@@ -120,7 +126,11 @@ export default function Scan({ addToast }: Props) {
   }
 
   function updateField(key: string, value: string) {
-    setEditData(prev => ({ ...prev, [key]: value }))
+    setEditData(prev => {
+      const next = { ...prev, [key]: value }
+      if (key === 'category') next.subCategory = ''
+      return next
+    })
   }
 
   return (
@@ -200,10 +210,24 @@ export default function Scan({ addToast }: Props) {
             </div>
           )}
 
-          <div className="form-group">
-            <label className="form-label">Date</label>
-            <input type="date" className="form-input" value={editData.date}
-              onChange={e => updateField('date', e.target.value)} id="edit-date" />
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Date</label>
+              <input type="date" className="form-input" value={editData.date}
+                onChange={e => updateField('date', e.target.value)} id="edit-date" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Business %</label>
+              <select className="form-select" value={editData.businessPct}
+                onChange={e => updateField('businessPct', e.target.value)} id="edit-biz-pct">
+                <option value="1">100%</option>
+                <option value="0.8">80%</option>
+                <option value="0.7">70%</option>
+                <option value="0.5">50%</option>
+                <option value="0.3">30%</option>
+                <option value="0">0%</option>
+              </select>
+            </div>
           </div>
 
           <div className="form-group">
@@ -220,10 +244,10 @@ export default function Scan({ addToast }: Props) {
 
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Amount (ex GST)</label>
+              <label className="form-label">Amount (inc GST)</label>
               <input type="number" step="0.01" className="form-input"
-                value={editData.amountExGst}
-                onChange={e => updateField('amountExGst', e.target.value)} id="edit-amount" />
+                value={editData.amountIncGst}
+                onChange={e => updateField('amountIncGst', e.target.value)} id="edit-amount" />
             </div>
             <div className="form-group">
               <label className="form-label">GST</label>
@@ -233,26 +257,22 @@ export default function Scan({ addToast }: Props) {
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Total</label>
-              <input type="number" step="0.01" className="form-input"
-                value={editData.total}
-                onChange={e => updateField('total', e.target.value)} id="edit-total" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Payment</label>
-              <input type="text" className="form-input"
-                value={editData.paymentMethod}
-                onChange={e => updateField('paymentMethod', e.target.value)} id="edit-payment" />
-            </div>
-          </div>
-
           <div className="form-group">
             <label className="form-label">Category</label>
             <select className="form-select" value={editData.category}
               onChange={e => updateField('category', e.target.value)} id="edit-category">
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {Object.keys(categories).map(c => (
+                <option key={c} value={c}>{formatCatName(c)}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Sub Category</label>
+            <select className="form-select" value={editData.subCategory}
+              onChange={e => updateField('subCategory', e.target.value)} id="edit-sub-category">
+              <option value="">— Select —</option>
+              {subCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
 

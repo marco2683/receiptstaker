@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { extractReceiptData } from '../services/ocr';
-import { appendReceiptRow } from '../services/spreadsheet';
+import { appendReceiptRow, getTopCategory, CATEGORY_MAP, getAllSubCategories } from '../services/spreadsheet';
 import { storeReceipt, getReceiptPath, deleteReceipt } from '../services/storage';
 import { getDatabase, saveDatabase } from '../database/schema';
 
@@ -17,6 +17,14 @@ const upload = multer({
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
     cb(null, allowed.includes(file.mimetype));
   },
+});
+
+// GET /api/categories - Return the full category structure
+router.get('/categories', (_req: Request, res: Response): void => {
+  res.json({
+    categories: CATEGORY_MAP,
+    allSubCategories: getAllSubCategories(),
+  });
 });
 
 // POST /api/receipts/scan - Upload and OCR a receipt
@@ -43,8 +51,8 @@ router.post('/scan', upload.single('receipt'), async (req: Request, res: Respons
 // POST /api/receipts/confirm - Confirm extracted data and save
 router.post('/confirm', upload.single('receipt'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { date, vendor, description, amountExGst, gst, total, category,
-      paymentMethod, notes, tempFile } = req.body;
+    const { date, vendor, description, subCategory, category,
+      amountIncGst, gst, businessPct, notes, tempFile } = req.body;
 
     const id = uuidv4().substring(0, 8);
     let receiptFilename: string | null = null;
@@ -57,26 +65,31 @@ router.post('/confirm', upload.single('receipt'), async (req: Request, res: Resp
       receiptFilename = await storeReceipt(tempPath, date, vendor, description || vendor);
     }
 
+    // Determine top-level category from sub-category if not provided
+    const topCategory = category || getTopCategory(subCategory || '');
+
     // Write to spreadsheet
     const rowNumber = await appendReceiptRow({
       id, date, vendor, description: description || '',
-      amountExGst: amountExGst ? parseFloat(amountExGst) : null,
+      category: topCategory,
+      subCategory: subCategory || '',
+      amountIncGst: parseFloat(amountIncGst),
       gst: gst ? parseFloat(gst) : null,
-      total: parseFloat(total),
-      category: category || 'Other',
-      paymentMethod: paymentMethod || null,
+      businessPct: businessPct ? parseFloat(businessPct) : 1.0,
       receiptFilename, notes: notes || null,
     });
 
     // Save to database index
     const db = await getDatabase();
     db.run(
-      `INSERT INTO receipts (id, date, vendor, description, amount_ex_gst, gst, total, 
-       category, payment_method, notes, receipt_filename, spreadsheet_row)
+      `INSERT INTO receipts (id, date, description, vendor, category, sub_category,
+       amount_inc_gst, gst, business_pct, notes, receipt_filename, spreadsheet_row)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, date, vendor, description || '', amountExGst ? parseFloat(amountExGst) : null,
-       gst ? parseFloat(gst) : null, parseFloat(total), category || 'Other',
-       paymentMethod || null, notes || null, receiptFilename, rowNumber]
+      [id, date, description || '', vendor, topCategory,
+       subCategory || '', parseFloat(amountIncGst),
+       gst ? parseFloat(gst) : null,
+       businessPct ? parseFloat(businessPct) : 1.0,
+       notes || null, receiptFilename, rowNumber]
     );
     saveDatabase();
 
@@ -91,11 +104,11 @@ router.post('/confirm', upload.single('receipt'), async (req: Request, res: Resp
 // POST /api/receipts/manual - Manual entry (no image required)
 router.post('/manual', upload.single('receipt'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { date, vendor, description, amountExGst, gst, total, category,
-      paymentMethod, notes } = req.body;
+    const { date, vendor, description, subCategory, category,
+      amountIncGst, gst, businessPct, notes } = req.body;
 
-    if (!date || !vendor || !total) {
-      res.status(400).json({ error: 'Date, vendor, and total are required' });
+    if (!date || !vendor || !amountIncGst) {
+      res.status(400).json({ error: 'Date, vendor, and amount are required' });
       return;
     }
 
@@ -106,24 +119,28 @@ router.post('/manual', upload.single('receipt'), async (req: Request, res: Respo
       receiptFilename = await storeReceipt(req.file.path, date, vendor, description || vendor);
     }
 
+    const topCategory = category || getTopCategory(subCategory || '');
+
     const rowNumber = await appendReceiptRow({
       id, date, vendor, description: description || '',
-      amountExGst: amountExGst ? parseFloat(amountExGst) : null,
+      category: topCategory,
+      subCategory: subCategory || '',
+      amountIncGst: parseFloat(amountIncGst),
       gst: gst ? parseFloat(gst) : null,
-      total: parseFloat(total),
-      category: category || 'Other',
-      paymentMethod: paymentMethod || null,
+      businessPct: businessPct ? parseFloat(businessPct) : 1.0,
       receiptFilename, notes: notes || null,
     });
 
     const db = await getDatabase();
     db.run(
-      `INSERT INTO receipts (id, date, vendor, description, amount_ex_gst, gst, total,
-       category, payment_method, notes, receipt_filename, spreadsheet_row)
+      `INSERT INTO receipts (id, date, description, vendor, category, sub_category,
+       amount_inc_gst, gst, business_pct, notes, receipt_filename, spreadsheet_row)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, date, vendor, description || '', amountExGst ? parseFloat(amountExGst) : null,
-       gst ? parseFloat(gst) : null, parseFloat(total), category || 'Other',
-       paymentMethod || null, notes || null, receiptFilename, rowNumber]
+      [id, date, description || '', vendor, topCategory,
+       subCategory || '', parseFloat(amountIncGst),
+       gst ? parseFloat(gst) : null,
+       businessPct ? parseFloat(businessPct) : 1.0,
+       notes || null, receiptFilename, rowNumber]
     );
     saveDatabase();
 

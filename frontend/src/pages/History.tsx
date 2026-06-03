@@ -70,7 +70,7 @@ export default function History({ addToast }: Props) {
             {selected.vendor}
           </h2>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-            {formatDate(selected.date)} · {selected.category}
+            {formatDate(selected.date)} · {selected.sub_category || selected.category}
           </p>
 
           <div className="confirm-summary">
@@ -80,28 +80,34 @@ export default function History({ addToast }: Props) {
                 <span className="value">{selected.description}</span>
               </div>
             )}
-            {selected.amount_ex_gst !== null && (
+            <div className="confirm-row">
+              <span className="label">Category</span>
+              <span className="value">{selected.category?.replace(/_/g, ' ')}</span>
+            </div>
+            {selected.sub_category && (
               <div className="confirm-row">
-                <span className="label">Amount (ex GST)</span>
-                <span className="value">${selected.amount_ex_gst?.toFixed(2)}</span>
+                <span className="label">Sub Category</span>
+                <span className="value">{selected.sub_category}</span>
               </div>
             )}
+            <div className="confirm-row total">
+              <span className="label">Amount (inc GST)</span>
+              <span className="value">${selected.amount_inc_gst.toFixed(2)}</span>
+            </div>
             {selected.gst !== null && (
               <div className="confirm-row">
                 <span className="label">GST</span>
                 <span className="value">${selected.gst?.toFixed(2)}</span>
               </div>
             )}
-            <div className="confirm-row total">
-              <span className="label">Total</span>
-              <span className="value">${selected.total.toFixed(2)}</span>
+            <div className="confirm-row">
+              <span className="label">Business %</span>
+              <span className="value">{((selected.business_pct || 1) * 100).toFixed(0)}%</span>
             </div>
-            {selected.payment_method && (
-              <div className="confirm-row">
-                <span className="label">Payment</span>
-                <span className="value">{selected.payment_method}</span>
-              </div>
-            )}
+            <div className="confirm-row">
+              <span className="label">Deductible</span>
+              <span className="value">${((selected.amount_inc_gst - (selected.gst || selected.amount_inc_gst/11)) * (selected.business_pct || 1)).toFixed(2)}</span>
+            </div>
             {selected.notes && (
               <div className="confirm-row">
                 <span className="label">Notes</span>
@@ -146,10 +152,10 @@ export default function History({ addToast }: Props) {
               <div className="receipt-info">
                 <div className="receipt-vendor">{r.vendor}</div>
                 <div className="receipt-meta">
-                  {formatDate(r.date)} · <span className="badge">{r.category}</span>
+                  {formatDate(r.date)} · <span className="badge">{r.sub_category || r.category}</span>
                 </div>
               </div>
-              <div className="receipt-amount">${r.total.toFixed(2)}</div>
+              <div className="receipt-amount">${r.amount_inc_gst.toFixed(2)}</div>
             </div>
           ))}
         </div>

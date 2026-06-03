@@ -7,14 +7,12 @@ export interface ReceiptData {
   vendor: string;
   description: string;
   items?: Array<{ name: string; amount: number }>;
-  subtotal?: number | null;
+  amountIncGst: number;
   gst: number | null;
-  total: number;
-  amountExGst?: number | null;
   payment_method?: string | null;
-  paymentMethod?: string | null;
-  category_guess?: string;
-  category?: string;
+  category: string;       // Top-level: OPERATING_EXPENSE, etc.
+  subCategory: string;    // Specific: Fuel, Mobile Bill, etc.
+  businessPct: number;    // 0.0-1.0
   notes?: string;
 }
 
@@ -34,17 +32,28 @@ export interface SaveResult {
 export interface ReceiptRecord {
   id: string;
   date: string;
-  vendor: string;
   description: string;
-  amount_ex_gst: number | null;
-  gst: number | null;
-  total: number;
+  vendor: string;
   category: string;
-  payment_method: string | null;
+  sub_category: string;
+  amount_inc_gst: number;
+  gst: number | null;
+  business_pct: number;
   notes: string | null;
   receipt_filename: string | null;
   spreadsheet_row: number;
   created_at: string;
+}
+
+export interface CategoryMap {
+  [topCategory: string]: string[];
+}
+
+export async function fetchCategories(): Promise<CategoryMap> {
+  const res = await fetch(`${API_BASE}/receipts/categories`);
+  if (!res.ok) throw new Error('Failed to load categories');
+  const data = await res.json();
+  return data.categories;
 }
 
 export async function scanReceipt(file: File): Promise<ScanResult> {

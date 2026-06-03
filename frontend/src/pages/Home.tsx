@@ -25,13 +25,13 @@ export default function Home({ addToast }: Props) {
     }
   }
 
-  const totalSpend = receipts.reduce((sum, r) => sum + (r.total || 0), 0)
+  const totalSpend = receipts.reduce((sum, r) => sum + (r.amount_inc_gst || 0), 0)
   const thisMonth = receipts.filter(r => {
     const d = new Date(r.date)
     const now = new Date()
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
   })
-  const monthlySpend = thisMonth.reduce((sum, r) => sum + (r.total || 0), 0)
+  const monthlySpend = thisMonth.reduce((sum, r) => sum + (r.amount_inc_gst || 0), 0)
 
   return (
     <div className="page-enter">
@@ -90,10 +90,10 @@ export default function Home({ addToast }: Props) {
               <div className="receipt-info">
                 <div className="receipt-vendor">{r.vendor}</div>
                 <div className="receipt-meta">
-                  {formatDate(r.date)} · {r.category}
+                  {formatDate(r.date)} · {r.sub_category || r.category}
                 </div>
               </div>
-              <div className="receipt-amount">${r.total.toFixed(2)}</div>
+              <div className="receipt-amount">${r.amount_inc_gst.toFixed(2)}</div>
             </div>
           ))}
         </div>
