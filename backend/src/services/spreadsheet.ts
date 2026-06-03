@@ -1,9 +1,6 @@
 import ExcelJS from 'exceljs';
-import path from 'path';
 import fs from 'fs';
-
-const DATA_DIR = path.resolve(__dirname, '../../../data');
-const SPREADSHEET_PATH = path.join(DATA_DIR, process.env.SPREADSHEET_FILE || 'receipts.xlsx');
+import { DATA_DIR, SPREADSHEET_PATH } from '../config/paths';
 
 // ==========================================
 // Column mapping — matches accountant template
@@ -100,14 +97,21 @@ interface ReceiptRow {
   date: string;
   vendor: string;
   description: string;
-  category: string;       // Top-level category
-  subCategory: string;    // Sub category
-  amountIncGst: number;   // Total including GST
-  gst: number | null;     // Will be formula if null
-  businessPct: number;    // 0.0 to 1.0
+  category: string;
+  subCategory: string;
+  amountIncGst: number;
+  gst: number | null;
+  businessPct: number;
+  confidence: number;     // 0.0-1.0, drives orange highlighting
   notes: string | null;
   receiptFilename: string | null;
 }
+
+const ORANGE_FILL: ExcelJS.Fill = {
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: { argb: 'FFFDE8D0' }, // Light orange for review
+};
 
 async function getOrCreateWorkbook(): Promise<ExcelJS.Workbook> {
   const workbook = new ExcelJS.Workbook();
@@ -345,8 +349,19 @@ export async function appendReceiptRow(receipt: ReceiptRow): Promise<number> {
     };
   }
 
+  // Orange highlight for low-confidence entries (needs manual review)
+  if (receipt.confidence < 0.7) {
+    for (let c = 1; c <= 12; c++) {
+      row.getCell(c).fill = ORANGE_FILL;
+    }
+    // Append confidence note
+    const existingNotes = receipt.notes || '';
+    row.getCell(COL.NOTES).value = `⚠️ LOW CONFIDENCE (${Math.round(receipt.confidence * 100)}%) ${existingNotes}`.trim();
+  }
+
   row.commit();
   await workbook.xlsx.writeFile(SPREADSHEET_PATH);
+  console.log(`📊 Row ${nextRow} written to spreadsheet (confidence: ${receipt.confidence})`);
   return nextRow;
 }
 

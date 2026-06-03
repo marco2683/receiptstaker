@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import { RECEIPTS_DIR } from '../config/paths';
 
 // Sharp is optional — used for image optimization but not required
 let sharp: any = null;
@@ -8,9 +9,6 @@ try {
 } catch {
   console.log('⚠️  sharp not available — receipts will be stored without optimization');
 }
-
-const DATA_DIR = path.resolve(__dirname, '../../../data');
-const RECEIPTS_DIR = path.join(DATA_DIR, process.env.RECEIPTS_FOLDER || 'receipts');
 
 export async function storeReceipt(
   sourcePath: string, date: string, vendor: string, description: string

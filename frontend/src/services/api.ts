@@ -2,6 +2,17 @@
 // In mobile/production, set VITE_API_URL to your deployed backend
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
+export async function autoScan(file: File): Promise<{ success: boolean; message: string }> {
+  const formData = new FormData();
+  formData.append('receipt', file);
+  const res = await fetch(`${API_BASE}/receipts/auto`, { method: 'POST', body: formData });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Upload failed');
+  }
+  return res.json();
+}
+
 export interface ReceiptData {
   date: string;
   vendor: string;

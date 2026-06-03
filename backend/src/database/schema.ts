@@ -1,19 +1,17 @@
 // @ts-ignore - sql.js has no type declarations
 import initSqlJs, { Database } from 'sql.js';
-import path from 'path';
 import fs from 'fs';
+import path from 'path';
+import { DATA_DIR, DB_PATH } from '../config/paths';
 
 let db: Database | null = null;
-
-const DB_PATH = path.resolve(__dirname, '../../data/receipts.db');
 
 export async function getDatabase(): Promise<Database> {
   if (db) return db;
 
   const SQL = await initSqlJs();
-  const dbDir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 
   if (fs.existsSync(DB_PATH)) {
@@ -35,6 +33,8 @@ export async function getDatabase(): Promise<Database> {
       amount_inc_gst REAL NOT NULL,
       gst REAL,
       business_pct REAL DEFAULT 1.0,
+      confidence REAL DEFAULT 1.0,
+      needs_review INTEGER DEFAULT 0,
       notes TEXT,
       receipt_filename TEXT,
       spreadsheet_row INTEGER,
@@ -43,28 +43,28 @@ export async function getDatabase(): Promise<Database> {
     )
   `);
 
-  // Migration: if old schema exists with 'total' column, migrate data
+  // Migration: add confidence/needs_review columns if missing
   try {
     const tableInfo = db.exec("PRAGMA table_info(receipts)");
     if (tableInfo.length > 0) {
-      const columns = tableInfo[0].values.map((row: any[]) => row[1]);
+      const columns = tableInfo[0].values.map((row: any[]) => row[1] as string);
+      if (!columns.includes('confidence')) {
+        db.run(`ALTER TABLE receipts ADD COLUMN confidence REAL DEFAULT 1.0`);
+      }
+      if (!columns.includes('needs_review')) {
+        db.run(`ALTER TABLE receipts ADD COLUMN needs_review INTEGER DEFAULT 0`);
+      }
+      // Old schema migration
       if (columns.includes('total') && !columns.includes('amount_inc_gst')) {
         console.log('🔄 Migrating database to new schema...');
         db.run(`ALTER TABLE receipts RENAME TO receipts_old`);
         db.run(`
           CREATE TABLE receipts (
-            id TEXT PRIMARY KEY,
-            date TEXT NOT NULL,
-            description TEXT,
-            vendor TEXT NOT NULL,
-            category TEXT,
-            sub_category TEXT,
-            amount_inc_gst REAL NOT NULL,
-            gst REAL,
-            business_pct REAL DEFAULT 1.0,
-            notes TEXT,
-            receipt_filename TEXT,
-            spreadsheet_row INTEGER,
+            id TEXT PRIMARY KEY, date TEXT NOT NULL, description TEXT,
+            vendor TEXT NOT NULL, category TEXT, sub_category TEXT,
+            amount_inc_gst REAL NOT NULL, gst REAL, business_pct REAL DEFAULT 1.0,
+            confidence REAL DEFAULT 1.0, needs_review INTEGER DEFAULT 0,
+            notes TEXT, receipt_filename TEXT, spreadsheet_row INTEGER,
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
           )
@@ -83,7 +83,7 @@ export async function getDatabase(): Promise<Database> {
       }
     }
   } catch (e) {
-    // Migration not needed or already done
+    // Migration not needed
   }
 
   saveDatabase();
@@ -94,9 +94,8 @@ export function saveDatabase(): void {
   if (!db) return;
   const data = db.export();
   const buffer = Buffer.from(data);
-  const dbDir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   fs.writeFileSync(DB_PATH, buffer);
 }
