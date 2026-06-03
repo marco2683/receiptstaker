@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listReceipts, ReceiptRecord } from '../services/api'
+import { listReceipts, autoScan, ReceiptRecord } from '../services/api'
 import type { AddToast } from '../components/Toast'
 
 interface Props { addToast: AddToast }
@@ -9,6 +9,8 @@ export default function Home({ addToast }: Props) {
   const navigate = useNavigate()
   const [receipts, setReceipts] = useState<ReceiptRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const cameraRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadReceipts()
@@ -19,9 +21,28 @@ export default function Home({ addToast }: Props) {
       const data = await listReceipts()
       setReceipts(data)
     } catch {
-      // Server might not be running yet — that's OK
+      // Server might not be running yet
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Directly handle file from camera/gallery — no navigation
+  async function handleCameraFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    e.target.value = '' // Reset so same file can be re-selected
+
+    setUploading(true)
+    try {
+      await autoScan(f)
+      addToast('success', '📸 Receipt uploaded — analysing in background')
+      // Refresh list after a delay to show new entry
+      setTimeout(() => loadReceipts(), 5000)
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to upload')
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -35,6 +56,16 @@ export default function Home({ addToast }: Props) {
 
   return (
     <div className="page-enter">
+      {/* Hidden file input for camera */}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*,image/heic"
+        onChange={handleCameraFile}
+        style={{ position: 'absolute', opacity: 0, width: 0, height: 0, overflow: 'hidden' }}
+        id="camera-input"
+      />
+
       {/* Stats */}
       <div className="stats-grid">
         <div className="stat-card">
@@ -58,10 +89,13 @@ export default function Home({ addToast }: Props) {
       {/* Quick Actions */}
       <p className="section-title">Quick Actions</p>
       <div className="quick-actions">
-        <button className="quick-action" onClick={() => navigate('/scan')} id="quick-scan">
-          <span className="action-icon">📸</span>
-          <span className="action-label">Scan Receipt</span>
-          <span className="action-desc">Take a photo & auto-fill</span>
+        <button className="quick-action"
+          onClick={() => cameraRef.current?.click()}
+          disabled={uploading}
+          id="quick-scan">
+          <span className="action-icon">{uploading ? '⏳' : '📸'}</span>
+          <span className="action-label">{uploading ? 'Uploading...' : 'Scan Receipt'}</span>
+          <span className="action-desc">Take a photo or pick from gallery</span>
         </button>
         <button className="quick-action" onClick={() => navigate('/manual')} id="quick-manual">
           <span className="action-icon">✏️</span>
