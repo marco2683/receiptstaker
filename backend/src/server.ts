@@ -43,6 +43,17 @@ app.get('/api/spreadsheet/download', (_req, res) => {
   res.download(SPREADSHEET_PATH, 'receipts.xlsx');
 });
 
+// Serve frontend static files (for tunnel/production mode)
+const frontendDist = path.resolve(process.cwd(), '../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  // SPA fallback — serve index.html for any non-API route
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+  console.log(`🌐 Serving frontend from: ${frontendDist}`);
+}
+
 // Start server
 async function start() {
   try {
@@ -54,12 +65,7 @@ async function start() {
 
     app.listen(PORT, HOST, () => {
       console.log(`\n🧾 Receipt Taker API running at http://${HOST}:${PORT}`);
-      console.log(`   POST /api/receipts/auto     → Auto-scan (fire & forget)`);
-      console.log(`   POST /api/receipts/scan     → Upload & OCR receipt`);
-      console.log(`   POST /api/receipts/confirm  → Confirm & save`);
-      console.log(`   POST /api/receipts/manual   → Manual entry`);
-      console.log(`   GET  /api/receipts          → List all receipts`);
-      console.log(`   GET  /api/spreadsheet/download → Download Excel\n`);
+      console.log(`   Spreadsheet: ${SPREADSHEET_PATH}\n`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

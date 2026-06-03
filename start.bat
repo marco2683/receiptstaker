@@ -1,51 +1,83 @@
 @echo off
-title Receipt Taker - Local Server
+title Receipt Taker
 cls
 echo.
-echo  ======================================
-echo   Receipt Taker - Starting...
-echo  ======================================
+echo  ============================================
+echo         Receipt Taker - Starting...
+echo  ============================================
 echo.
 
-:: Get local IP for phone access
+set CLOUDFLARED="C:\Program Files (x86)\cloudflared\cloudflared.exe"
+
+:: Build frontend if needed
+if not exist "frontend\dist\index.html" (
+    echo  Building frontend...
+    cd frontend
+    call npm run build >nul 2>&1
+    cd ..
+    echo  Frontend built.
+)
+
+:: Start backend
+echo  Starting backend server...
+cd backend
+start /B cmd /c "npm run dev 2>nul"
+cd ..
+
+:: Wait for backend
+echo  Waiting for backend...
+timeout /t 4 /nobreak >nul
+
+:: Verify backend
+curl -s http://localhost:3001/api/health >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo  [!] Backend failed to start. Check backend\.env
+    pause
+    exit /b 1
+)
+echo  Backend ready.
+
+:: Get local IP
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /C:"IPv4"') do (
     for /f "tokens=1" %%b in ("%%a") do set LOCAL_IP=%%b
 )
 
-:: Kill any existing node processes on our ports
-taskkill /F /IM node.exe >nul 2>&1
-timeout /t 1 /nobreak >nul
+:: Start Cloudflare Tunnel
+echo  Starting tunnel for anywhere access...
+start /B %CLOUDFLARED% tunnel --url http://localhost:3001 2>tunnel_log.tmp
+timeout /t 8 /nobreak >nul
 
-:: Start backend
-echo  Starting backend...
-cd backend
-start /B cmd /c "npm run dev 2>&1 | findstr /V /C:\"tsx\""
-cd ..
+:: Extract tunnel URL from log
+set TUNNEL_URL=
+for /f "tokens=*" %%a in ('findstr /C:"trycloudflare.com" tunnel_log.tmp 2^>nul') do (
+    for %%u in (%%a) do (
+        echo %%u | findstr /C:"https://" >nul 2>&1
+        if not errorlevel 1 set TUNNEL_URL=%%u
+    )
+)
 
-:: Wait for backend to be ready
-timeout /t 3 /nobreak >nul
-
-:: Start frontend  
-echo  Starting frontend...
-cd frontend
-start /B cmd /c "npm run dev 2>&1"
-cd ..
-
-:: Wait for frontend to be ready
-timeout /t 3 /nobreak >nul
-
+cls
 echo.
-echo  ======================================
-echo   READY! Open this on your phone:
+echo  ============================================
+echo     RECEIPT TAKER IS RUNNING!
+echo  ============================================
 echo.
-echo   http://%LOCAL_IP%:5173
+echo   AT HOME (same WiFi):
+echo     http://%LOCAL_IP%:3001
 echo.
-echo   Spreadsheet saves to:
-echo   data\receipts.xlsx
-echo  ======================================
+if defined TUNNEL_URL (
+echo   ANYWHERE (phone bookmark this!):
+echo     %TUNNEL_URL%
+) else (
+echo   ANYWHERE: Tunnel starting...
+echo     Run: type tunnel_log.tmp
+echo     Look for the trycloudflare.com URL
+)
 echo.
-echo  Press Ctrl+C to stop.
+echo   Spreadsheet: data\receipts.xlsx
+echo.
+echo   Press Ctrl+C to stop.
+echo  ============================================
 echo.
 
-:: Keep window open
 cmd /k
