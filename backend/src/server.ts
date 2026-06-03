@@ -35,6 +35,16 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Download spreadsheet
+app.get('/api/spreadsheet/download', (_req, res) => {
+  const spreadsheetPath = path.resolve(__dirname, '../../data', process.env.SPREADSHEET_FILE || 'receipts.xlsx');
+  if (!fs.existsSync(spreadsheetPath)) {
+    res.status(404).json({ error: 'Spreadsheet not found' });
+    return;
+  }
+  res.download(spreadsheetPath, 'receipts.xlsx');
+});
+
 // Start server
 async function start() {
   try {

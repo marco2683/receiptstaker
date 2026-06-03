@@ -68,6 +68,14 @@ export default function Home({ addToast }: Props) {
           <span className="action-label">Manual Entry</span>
           <span className="action-desc">Enter details by hand</span>
         </button>
+        <button className="quick-action" onClick={() => {
+          const apiBase = import.meta.env.VITE_API_URL || '/api'
+          window.open(`${apiBase}/spreadsheet/download`, '_blank')
+        }} id="quick-download">
+          <span className="action-icon">📊</span>
+          <span className="action-label">Download Spreadsheet</span>
+          <span className="action-desc">Get your Excel file</span>
+        </button>
       </div>
 
       {/* Recent receipts */}

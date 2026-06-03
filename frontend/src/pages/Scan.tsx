@@ -32,12 +32,14 @@ export default function Scan({ addToast }: Props) {
   const subCategories = categories[editData.category] || []
 
   async function handleFile(f: File) {
+    console.log('📸 handleFile called:', f.name, f.size, f.type)
     setFile(f)
     setPreview(URL.createObjectURL(f))
     setStep('processing')
 
     try {
       const result = await scanReceipt(f)
+      console.log('✅ Scan result:', result)
       const d = result.data
       setData(d)
       setTempFile(result.tempFile)
@@ -54,12 +56,14 @@ export default function Scan({ addToast }: Props) {
       })
       setStep('confirm')
     } catch (err: any) {
+      console.error('❌ Scan error:', err)
       addToast('error', err.message || 'Failed to scan receipt')
       setStep('capture')
     }
   }
 
   function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    console.log('📎 File input changed:', e.target.files?.length)
     const f = e.target.files?.[0]
     if (f) handleFile(f)
   }
@@ -157,14 +161,14 @@ export default function Scan({ addToast }: Props) {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
-              capture={isNative ? undefined : 'environment'}
+              accept="image/*,image/heic"
               onChange={handleFileInput}
+              style={{ position: 'absolute', opacity: 0, width: 0, height: 0, overflow: 'hidden' }}
               id="file-input"
             />
-            <span className="scan-zone-icon">{isNative ? '🖼️' : '📸'}</span>
+            <span className="scan-zone-icon">📸</span>
             <p className="scan-zone-title">
-              {isNative ? 'Choose from Gallery' : 'Snap or Upload Receipt'}
+              Snap or Upload Receipt
             </p>
             <p className="scan-zone-subtitle">
               {isNative ? 'Select an existing receipt image' : 'Tap to take a photo or drag & drop an image'}
