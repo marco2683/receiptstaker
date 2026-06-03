@@ -1,3 +1,4 @@
+// @ts-ignore - sql.js has no type declarations
 import initSqlJs, { Database } from 'sql.js';
 import path from 'path';
 import fs from 'fs';
@@ -46,7 +47,7 @@ export async function getDatabase(): Promise<Database> {
   try {
     const tableInfo = db.exec("PRAGMA table_info(receipts)");
     if (tableInfo.length > 0) {
-      const columns = tableInfo[0].values.map(row => row[1]);
+      const columns = tableInfo[0].values.map((row: any[]) => row[1]);
       if (columns.includes('total') && !columns.includes('amount_inc_gst')) {
         console.log('🔄 Migrating database to new schema...');
         db.run(`ALTER TABLE receipts RENAME TO receipts_old`);

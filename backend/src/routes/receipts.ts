@@ -163,9 +163,9 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
       return;
     }
     const columns = results[0].columns;
-    const receipts = results[0].values.map(row => {
+    const receipts = results[0].values.map((row: any[]) => {
       const obj: any = {};
-      columns.forEach((col, i) => { obj[col] = row[i]; });
+      columns.forEach((col: string, i: number) => { obj[col] = row[i]; });
       return obj;
     });
     res.json({ receipts });
