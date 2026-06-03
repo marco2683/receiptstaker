@@ -8,6 +8,9 @@
     "build": "tsc",
     "start": "node dist/server.js"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -16,6 +19,7 @@
     "multer": "^1.4.5-lts.1",
     "openai": "^4.78.0",
     "sql.js": "^1.12.0",
+    "typescript": "^5.7.3",
     "uuid": "^11.1.0"
   },
   "optionalDependencies": {
@@ -26,7 +30,6 @@
     "@types/express": "^5.0.0",
     "@types/multer": "^1.4.12",
     "@types/uuid": "^10.0.0",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "tsx": "^4.19.2"
   }
 }
