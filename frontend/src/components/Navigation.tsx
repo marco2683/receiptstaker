@@ -9,7 +9,8 @@ interface Props { addToast: AddToast }
 export default function Navigation({ addToast }: Props) {
   const location = useLocation()
   const navigate = useNavigate()
-  const fileRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const uploadRef = useRef<HTMLInputElement>(null)
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -24,28 +25,56 @@ export default function Navigation({ addToast }: Props) {
     }
   }
 
-  const navItems = [
-    { path: '/', icon: <Icon.Home size={22} />, label: 'Home' },
-    { path: '/history', icon: <Icon.History size={22} />, label: 'History' },
-    { path: 'camera', icon: <Icon.Camera size={24} />, label: '', isScan: true },
-    { path: '/manual', icon: <Icon.Edit size={22} />, label: 'Manual' },
-  ]
-
   return (
     <nav className="bottom-nav" id="main-nav">
-      <input ref={fileRef} type="file" accept="image/*,image/heic" onChange={handleFile}
+      {/* Camera input — opens camera directly */}
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleFile}
         style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
+      {/* Upload input — shows gallery/files picker */}
+      <input ref={uploadRef} type="file" accept="image/*,image/heic" onChange={handleFile}
+        style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
+
       <div className="bottom-nav-inner">
-        {navItems.map(item => (
-          <button
-            key={item.path}
-            className={`nav-item ${item.isScan ? 'scan-btn' : ''} ${location.pathname === item.path ? 'active' : ''}`}
-            onClick={() => item.isScan ? fileRef.current?.click() : navigate(item.path)}
-          >
-            <span className="nav-icon">{item.icon}</span>
-            {item.label && <span>{item.label}</span>}
-          </button>
-        ))}
+        <button
+          className={`nav-item ${location.pathname === '/' ? 'active' : ''}`}
+          onClick={() => navigate('/')}
+        >
+          <span className="nav-icon"><Icon.Home size={22} /></span>
+          <span>Home</span>
+        </button>
+
+        <button
+          className={`nav-item ${location.pathname === '/history' ? 'active' : ''}`}
+          onClick={() => navigate('/history')}
+        >
+          <span className="nav-icon"><Icon.History size={22} /></span>
+          <span>History</span>
+        </button>
+
+        {/* Main camera button — large, center, opens camera directly */}
+        <button
+          className="nav-item scan-btn"
+          onClick={() => cameraRef.current?.click()}
+        >
+          <span className="nav-icon"><Icon.Camera size={26} /></span>
+        </button>
+
+        {/* Upload button — smaller, opens gallery/files */}
+        <button
+          className="nav-item upload-btn"
+          onClick={() => uploadRef.current?.click()}
+        >
+          <span className="nav-icon"><Icon.File size={22} /></span>
+          <span>Upload</span>
+        </button>
+
+        <button
+          className={`nav-item ${location.pathname === '/manual' ? 'active' : ''}`}
+          onClick={() => navigate('/manual')}
+        >
+          <span className="nav-icon"><Icon.Edit size={22} /></span>
+          <span>Manual</span>
+        </button>
       </div>
     </nav>
   )

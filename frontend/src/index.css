@@ -105,6 +105,10 @@ body { font-family: var(--font); background: var(--bg-primary); color: var(--tex
 }
 .nav-item.scan-btn .nav-icon { font-size: 1.5rem; }
 .nav-item.scan-btn:active { transform: scale(0.9); }
+.nav-item.upload-btn {
+  color: var(--accent);
+}
+.nav-item.upload-btn .nav-icon { color: var(--accent); }
 
 /* ---- BUTTONS ---- */
 .btn {
