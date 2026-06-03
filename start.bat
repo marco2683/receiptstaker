@@ -1,38 +1,51 @@
 @echo off
 title Receipt Taker - Local Server
+cls
 echo.
-echo ========================================
-echo   Receipt Taker - Starting Servers
-echo ========================================
+echo  ======================================
+echo   Receipt Taker - Starting...
+echo  ======================================
 echo.
 
-:: Get local IP
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4 Address" ^| findstr /c:"192." /c:"10." /c:"172."') do (
-    set LOCAL_IP=%%a
+:: Get local IP for phone access
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /C:"IPv4"') do (
+    for /f "tokens=1" %%b in ("%%a") do set LOCAL_IP=%%b
 )
-set LOCAL_IP=%LOCAL_IP: =%
 
-echo  Your local network IP: %LOCAL_IP%
-echo.
-echo  After both servers start:
-echo  - PC Browser:    http://localhost:5173
-echo  - Phone Browser: http://%LOCAL_IP%:5173
-echo.
-echo  To install as app on your phone:
-echo  - Android Chrome: Menu → "Add to Home Screen"
-echo  - iOS Safari: Share → "Add to Home Screen"
-echo.
-echo ========================================
-echo.
+:: Kill any existing node processes on our ports
+taskkill /F /IM node.exe >nul 2>&1
+timeout /t 1 /nobreak >nul
 
-:: Start backend in background
-echo Starting backend server...
-start "Receipt Taker Backend" cmd /c "cd backend && npm run dev"
+:: Start backend
+echo  Starting backend...
+cd backend
+start /B cmd /c "npm run dev 2>&1 | findstr /V /C:\"tsx\""
+cd ..
 
 :: Wait for backend to be ready
-timeout /t 3 /nobreak > nul
+timeout /t 3 /nobreak >nul
 
-:: Start frontend (blocks this terminal)
-echo Starting frontend server...
+:: Start frontend  
+echo  Starting frontend...
 cd frontend
-npm run dev
+start /B cmd /c "npm run dev 2>&1"
+cd ..
+
+:: Wait for frontend to be ready
+timeout /t 3 /nobreak >nul
+
+echo.
+echo  ======================================
+echo   READY! Open this on your phone:
+echo.
+echo   http://%LOCAL_IP%:5173
+echo.
+echo   Spreadsheet saves to:
+echo   data\receipts.xlsx
+echo  ======================================
+echo.
+echo  Press Ctrl+C to stop.
+echo.
+
+:: Keep window open
+cmd /k
