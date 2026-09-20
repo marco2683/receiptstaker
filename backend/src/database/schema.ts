@@ -188,6 +188,56 @@ export async function getDatabase(): Promise<DatabaseWrapper> {
     )
   `);
 
+  // === Auto-migrate missing columns for existing databases ===
+  try {
+    const tableInfo = await dbAdapter.exec('PRAGMA table_info(receipts)');
+    if (tableInfo.length > 0 && tableInfo[0].values) {
+      const existingCols = tableInfo[0].values.map((col: any[]) => col[1]);
+      if (!existingCols.includes('company_id')) {
+        console.log('🔄 Migrating schema: adding company_id column to receipts table...');
+        await dbAdapter.run("ALTER TABLE receipts ADD COLUMN company_id TEXT DEFAULT 'c1'");
+      }
+      if (!existingCols.includes('receipt_image_base64')) {
+        console.log('🔄 Migrating schema: adding receipt_image_base64 column to receipts table...');
+        await dbAdapter.run("ALTER TABLE receipts ADD COLUMN receipt_image_base64 TEXT");
+      }
+      if (!existingCols.includes('created_by')) {
+        console.log('🔄 Migrating schema: adding created_by column to receipts table...');
+        await dbAdapter.run("ALTER TABLE receipts ADD COLUMN created_by TEXT");
+      }
+    }
+  } catch (migErr: any) {
+    console.error('Migration notice:', migErr.message);
+  }
+
+  // Update any existing receipts without company_id to default company 'c1'
+  try {
+    await dbAdapter.run("UPDATE receipts SET company_id = 'c1' WHERE company_id IS NULL OR company_id = ''");
+  } catch {}
+
+  // === Seed Initial Companies & Users if empty ===
+  try {
+    const compCheck = await dbAdapter.exec('SELECT id FROM companies LIMIT 1');
+    if (compCheck.length === 0 || compCheck[0].values.length === 0) {
+      console.log('🌱 Seeding initial companies and admin user...');
+      const passHash = '$2b$12$jGBDcdx9tGIeS2Rd5V0Lbed8gxy0uBEi8symJRgXsi60FN2rbWMvS'; // Temp123!
+      
+      await dbAdapter.run("INSERT OR IGNORE INTO users (id, email, password_hash, name) VALUES ('u1', 'marco@mjsproducts.com.au', ?, 'Marco')", [passHash]);
+      await dbAdapter.run("INSERT OR IGNORE INTO users (id, email, password_hash, name) VALUES ('u2', 'hannah830225@gmail.com', ?, 'Hannah')", [passHash]);
+      await dbAdapter.run("INSERT OR IGNORE INTO users (id, email, password_hash, name) VALUES ('u3', 'tony@paniani.net', ?, 'Tony')", [passHash]);
+
+      await dbAdapter.run("INSERT OR IGNORE INTO companies (id, name, slug) VALUES ('c1', 'MJS Products & Design Pty Ltd', 'mjs-products')");
+      await dbAdapter.run("INSERT OR IGNORE INTO companies (id, name, slug) VALUES ('c2', 'Paniani Products Pty Ltd', 'paniani-products')");
+
+      await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES ('u1', 'c1', 'admin')");
+      await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES ('u1', 'c2', 'admin')");
+      await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES ('u2', 'c1', 'admin')");
+      await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES ('u3', 'c2', 'admin')");
+    }
+  } catch (seedErr: any) {
+    console.error('Seed error:', seedErr.message);
+  }
+
   saveDatabase();
   return dbAdapter;
 }
