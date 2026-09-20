@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { RECEIPTS_DIR } from '../config/paths';
+import { RECEIPTS_DIR, getCompanyReceiptsDir, getCompanyUploadsDir } from '../config/paths';
 
 // Sharp is optional — used for image optimization but not required
 let sharp: any = null;
@@ -11,10 +11,12 @@ try {
 }
 
 export async function storeReceipt(
-  sourcePath: string, date: string, vendor: string, description: string
+  sourcePath: string, date: string, vendor: string, description: string,
+  companyId?: string
 ): Promise<string> {
   const [year, month] = date.split('-');
-  const targetDir = path.join(RECEIPTS_DIR, year, month);
+  const baseDir = companyId ? getCompanyReceiptsDir(companyId) : RECEIPTS_DIR;
+  const targetDir = path.join(baseDir, year, month);
   if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
   const cleanVendor = sanitize(vendor);
@@ -45,13 +47,14 @@ export async function storeReceipt(
   }
 }
 
-export function getReceiptPath(date: string, filename: string): string {
-  const [year, month] = date.split('-');
-  return path.join(RECEIPTS_DIR, year, month, filename);
+export function getReceiptPath(date: string, filename: string, companyId?: string): string {
+  const baseDir = companyId ? getCompanyReceiptsDir(companyId) : RECEIPTS_DIR;
+  // filename already contains year/month prefix (e.g. "2026/04/file.jpg")
+  return path.join(baseDir, filename);
 }
 
-export function deleteReceipt(date: string, filename: string): boolean {
-  const fp = getReceiptPath(date, filename);
+export function deleteReceipt(date: string, filename: string, companyId?: string): boolean {
+  const fp = getReceiptPath(date, filename, companyId);
   if (fs.existsSync(fp)) { fs.unlinkSync(fp); return true; }
   return false;
 }
@@ -59,6 +62,14 @@ export function deleteReceipt(date: string, filename: string): boolean {
 function sanitize(str: string): string {
   return str.replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '_')
     .replace(/_+/g, '_').replace(/^_|_$/g, '').substring(0, 40).replace(/_$/g, '');
+}
+
+export function initializeCompanyStorage(companyId: string): void {
+  const receiptsDir = getCompanyReceiptsDir(companyId);
+  const uploadsDir = getCompanyUploadsDir(companyId);
+  if (!fs.existsSync(receiptsDir)) fs.mkdirSync(receiptsDir, { recursive: true });
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log(`📁 Company storage ready: ${receiptsDir}`);
 }
 
 export function initializeStorage(): void {

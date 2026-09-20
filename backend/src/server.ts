@@ -2,11 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
+import authRouter from './routes/auth';
+import companiesRouter from './routes/companies';
 import receiptsRouter from './routes/receipts';
+import emailAccountsRouter from './routes/email-accounts';
 import { getDatabase } from './database/schema';
 import { initializeSpreadsheet } from './services/spreadsheet';
 import { initializeStorage } from './services/storage';
-import { DATA_DIR, UPLOADS_DIR, SPREADSHEET_PATH } from './config/paths';
+import { DATA_DIR, UPLOADS_DIR, COMPANIES_DIR } from './config/paths';
 import fs from 'fs';
 
 // Load environment variables
@@ -22,30 +25,45 @@ app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
 // Ensure directories exist
-[DATA_DIR, UPLOADS_DIR].forEach(dir => {
+[DATA_DIR, UPLOADS_DIR, COMPANIES_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
 // API Routes
+app.use('/api/auth', authRouter);
+app.use('/api/companies', companiesRouter);
 app.use('/api/receipts', receiptsRouter);
+app.use('/api/email-accounts', emailAccountsRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Download spreadsheet
+// Download spreadsheet (company-scoped)
 app.get('/api/spreadsheet/download', (_req, res) => {
-  if (!fs.existsSync(SPREADSHEET_PATH)) {
+  const companyId = _req.headers['x-company-id'] as string;
+  if (!companyId) {
+    res.status(400).json({ error: 'Company ID required' });
+    return;
+  }
+  const { getCompanySpreadsheetPath } = require('./config/paths');
+  const spreadsheetPath = getCompanySpreadsheetPath(companyId);
+  if (!fs.existsSync(spreadsheetPath)) {
     res.status(404).json({ error: 'Spreadsheet not found' });
     return;
   }
-  res.download(SPREADSHEET_PATH, 'receipts.xlsx');
+  res.download(spreadsheetPath, `receipts_${companyId}.xlsx`);
 });
 
-// Serve frontend static files (for tunnel/production mode)
-const frontendDist = path.resolve(process.cwd(), '../frontend/dist');
-if (fs.existsSync(frontendDist)) {
+// Serve frontend static files (for tunnel/production cloud mode)
+const possibleFrontendPaths = [
+  path.resolve(process.cwd(), 'frontend/dist'),
+  path.resolve(process.cwd(), '../frontend/dist'),
+];
+const frontendDist = possibleFrontendPaths.find(p => fs.existsSync(p));
+
+if (frontendDist) {
   app.use(express.static(frontendDist));
   // SPA fallback — serve index.html for any non-API route
   app.get('*', (_req, res) => {
@@ -65,7 +83,7 @@ async function start() {
 
     app.listen(PORT, HOST, () => {
       console.log(`\n🧾 Receipt Taker API running at http://${HOST}:${PORT}`);
-      console.log(`   Spreadsheet: ${SPREADSHEET_PATH}\n`);
+      console.log(`   Companies dir: ${COMPANIES_DIR}\n`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: receipt-taker
+    env: node
+    plan: starter
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: OPENAI_API_KEY
+        sync: false
+    disk:
+      name: receipt-data
+      mountPath: /var/data
+      sizeGB: 1

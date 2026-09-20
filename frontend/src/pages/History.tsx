@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { listReceipts, ReceiptRecord } from '../services/api'
+import { listReceipts, downloadSpreadsheet, ReceiptRecord } from '../services/api'
 import * as Icon from '../components/Icons'
 import type { AddToast } from '../components/Toast'
 
@@ -169,13 +169,17 @@ export default function History({ addToast }: Props) {
           <p className="section-title">{filtered.length} receipt{filtered.length !== 1 ? 's' : ''}</p>
           <div className="receipt-list">
             {filtered.map(r => (
-              <div key={r.id} className={`receipt-item ${r.notes?.includes('LOW CONFIDENCE') ? 'needs-review' : ''}`}>
+              <div key={r.id}
+                className={`receipt-item clickable ${r.notes?.includes('LOW CONFIDENCE') ? 'needs-review' : ''}`}
+                onClick={() => navigate(`/receipt/${r.id}`)}
+              >
                 <div className="receipt-icon"><Icon.Receipt size={18} /></div>
                 <div className="receipt-info">
                   <div className="receipt-vendor">{r.vendor}</div>
                   <div className="receipt-meta">{formatDate(r.date)} · {r.sub_category || r.category}</div>
                 </div>
                 <div className="receipt-amount">${r.amount_inc_gst.toFixed(2)}</div>
+                <div className="receipt-chevron"><Icon.ChevronRight size={14} /></div>
               </div>
             ))}
           </div>
@@ -184,6 +188,17 @@ export default function History({ addToast }: Props) {
           <div className="history-actions">
             <button className="btn btn-primary" onClick={exportCSV}>
               <Icon.Download size={16} /> Export CSV
+            </button>
+            <button className="btn btn-secondary" onClick={async () => {
+              try {
+                addToast('info', 'Downloading Excel file...')
+                await downloadSpreadsheet()
+                addToast('success', 'Excel file downloaded')
+              } catch (err: any) {
+                addToast('error', err.message || 'Failed to download Excel file')
+              }
+            }}>
+              <Icon.File size={16} /> Download Excel
             </button>
             <button className="btn btn-secondary" onClick={emailCSV}>
               <Icon.Mail size={16} /> Email

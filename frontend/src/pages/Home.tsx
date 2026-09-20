@@ -24,6 +24,7 @@ export default function Home({ addToast }: Props) {
   useEffect(() => { loadReceipts() }, [])
 
   async function loadReceipts() {
+    setLoading(true)
     try { setReceipts(await listReceipts()) }
     catch { /* offline */ }
     finally { setLoading(false) }
@@ -74,6 +75,15 @@ export default function Home({ addToast }: Props) {
             <option value="">All Categories</option>
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+          <button
+            className="btn btn-ghost btn-sm refresh-btn"
+            onClick={loadReceipts}
+            disabled={loading}
+            title="Refresh"
+            style={{ padding: '4px 8px', marginLeft: 'auto' }}
+          >
+            <span className={loading ? 'spin' : ''} style={{ display: 'inline-block' }}>🔄</span>
+          </button>
         </div>
 
         <p className="section-title">{MONTHS[nowMonth]} {nowYear}</p>

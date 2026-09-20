@@ -46,7 +46,14 @@ export async function extractReceiptData(imagePath: string): Promise<ExtractedRe
         content: `You are an expert receipt parser for Australian business tax accounting.
 Extract structured data from receipt images.
 Always respond with valid JSON only, no markdown formatting or code blocks.
-Use Australian date format awareness (DD/MM/YYYY) and convert to YYYY-MM-DD.
+
+CRITICAL DATE RULE: This receipt is from AUSTRALIA. Australian dates are DD/MM/YYYY (day first, month second).
+- "04/06/2026" means 4th June 2026 → output "2026-06-04"
+- "12/03/2025" means 12th March 2025 → output "2025-03-12"
+- NEVER interpret DD/MM as MM/DD. The first number is ALWAYS the day.
+- Convert all dates to YYYY-MM-DD format in output.
+Today's date is ${new Date().toISOString().split('T')[0]} for reference.
+
 Currency is AUD. If GST is not explicitly stated, estimate as total/11 (10% GST).
 
 IMPORTANT: Rate your confidence from 0.0 to 1.0:

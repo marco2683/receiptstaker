@@ -69,11 +69,11 @@ export default function Navigation({ addToast }: Props) {
         </button>
 
         <button
-          className={`nav-item ${location.pathname === '/manual' ? 'active' : ''}`}
-          onClick={() => navigate('/manual')}
+          className={`nav-item ${location.pathname === '/settings' ? 'active' : ''}`}
+          onClick={() => navigate('/settings')}
         >
-          <span className="nav-icon"><Icon.Edit size={22} /></span>
-          <span>Manual</span>
+          <span className="nav-icon"><Icon.Settings size={22} /></span>
+          <span>Settings</span>
         </button>
       </div>
     </nav>

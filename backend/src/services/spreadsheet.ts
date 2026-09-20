@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import fs from 'fs';
-import { DATA_DIR, SPREADSHEET_PATH } from '../config/paths';
+import path from 'path';
+import { DATA_DIR, SPREADSHEET_PATH, getCompanySpreadsheetPath, getCompanyDir } from '../config/paths';
 
 // ==========================================
 // Column mapping — matches accountant template
@@ -113,157 +114,167 @@ const ORANGE_FILL: ExcelJS.Fill = {
   fgColor: { argb: 'FFFDE8D0' }, // Light orange for review
 };
 
-async function getOrCreateWorkbook(): Promise<ExcelJS.Workbook> {
+function createNewWorkbook(): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
 
-  if (fs.existsSync(SPREADSHEET_PATH)) {
-    await workbook.xlsx.readFile(SPREADSHEET_PATH);
-  } else {
-    // === Create new workbook matching accountant template ===
+  // --- Sheet 1: Expenses ---
+  const sheet = workbook.addWorksheet('Expenses', {
+    properties: { defaultColWidth: 16 },
+  });
 
-    // --- Sheet 1: Expenses ---
-    const sheet = workbook.addWorksheet('Expenses', {
-      properties: { defaultColWidth: 16 },
-    });
+  // Row 1: Title
+  const titleRow = sheet.getRow(1);
+  titleRow.getCell(1).value = 'EXPENSES';
+  titleRow.getCell(1).font = { bold: true, size: 14 };
 
-    // Row 1: Title
-    const titleRow = sheet.getRow(1);
-    titleRow.getCell(1).value = 'EXPENSES';
-    titleRow.getCell(1).font = { bold: true, size: 14 };
+  // Row 3: Column headers
+  const headerRow = sheet.getRow(HEADER_ROW);
+  headerRow.values = [
+    'DATE',                // A
+    'DESCRIPTION',         // B
+    'VENDOR',              // C
+    'CATEGORY',            // D
+    'SUB CATEGORY',        // E
+    'AMOUNT\n(INCLUDING GST)', // F
+    'GST',                 // G
+    'BUSINESS  %',         // H
+    'DEDUCTIBLE\nAMOUNT',  // I
+    ' GST\nAPPORTIONMENT', // J
+    'NOTES',               // K
+    'RECEIPT',             // L (our addition)
+  ];
 
-    // Row 3: Column headers
-    const headerRow = sheet.getRow(HEADER_ROW);
-    headerRow.values = [
-      'DATE',                // A
-      'DESCRIPTION',         // B
-      'VENDOR',              // C
-      'CATEGORY',            // D
-      'SUB CATEGORY',        // E
-      'AMOUNT\n(INCLUDING GST)', // F
-      'GST',                 // G
-      'BUSINESS  %',         // H
-      'DEDUCTIBLE\nAMOUNT',  // I
-      ' GST\nAPPORTIONMENT', // J
-      'NOTES',               // K
-      'RECEIPT',             // L (our addition)
-    ];
-
-    // Style headers
-    headerRow.eachCell((cell) => {
-      cell.font = { bold: true, size: 10 };
-      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFD9E1F2' }, // Light blue background
-      };
-      cell.border = {
-        bottom: { style: 'thin' },
-        right: { style: 'thin', color: { argb: 'FFD0D0D0' } },
-      };
-    });
-    headerRow.height = 36;
-
-    // Column widths
-    sheet.getColumn(COL.DATE).width = 14;
-    sheet.getColumn(COL.DESCRIPTION).width = 30;
-    sheet.getColumn(COL.VENDOR).width = 25;
-    sheet.getColumn(COL.CATEGORY).width = 28;
-    sheet.getColumn(COL.SUB_CATEGORY).width = 30;
-    sheet.getColumn(COL.AMOUNT_INC_GST).width = 18;
-    sheet.getColumn(COL.GST).width = 14;
-    sheet.getColumn(COL.BUSINESS_PCT).width = 12;
-    sheet.getColumn(COL.DEDUCTIBLE).width = 16;
-    sheet.getColumn(COL.GST_APPORTION).width = 16;
-    sheet.getColumn(COL.NOTES).width = 30;
-    sheet.getColumn(COL.RECEIPT_LINK).width = 14;
-
-    // Column formats
-    sheet.getColumn(COL.DATE).numFmt = DATE_FMT;
-    [COL.AMOUNT_INC_GST, COL.GST, COL.DEDUCTIBLE, COL.GST_APPORTION].forEach(c => {
-      sheet.getColumn(c).numFmt = CURRENCY_FMT;
-    });
-    sheet.getColumn(COL.BUSINESS_PCT).numFmt = PCT_FMT;
-
-    // Auto-filter
-    sheet.autoFilter = {
-      from: { row: HEADER_ROW, column: 1 },
-      to: { row: HEADER_ROW, column: 12 },
+  // Style headers
+  headerRow.eachCell((cell) => {
+    cell.font = { bold: true, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFD9E1F2' }, // Light blue background
     };
+    cell.border = {
+      bottom: { style: 'thin' },
+      right: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+    };
+  });
+  headerRow.height = 36;
 
-    // Freeze header rows
-    sheet.views = [{ state: 'frozen', ySplit: HEADER_ROW }];
+  // Column widths
+  sheet.getColumn(COL.DATE).width = 14;
+  sheet.getColumn(COL.DESCRIPTION).width = 30;
+  sheet.getColumn(COL.VENDOR).width = 25;
+  sheet.getColumn(COL.CATEGORY).width = 28;
+  sheet.getColumn(COL.SUB_CATEGORY).width = 30;
+  sheet.getColumn(COL.AMOUNT_INC_GST).width = 18;
+  sheet.getColumn(COL.GST).width = 14;
+  sheet.getColumn(COL.BUSINESS_PCT).width = 12;
+  sheet.getColumn(COL.DEDUCTIBLE).width = 16;
+  sheet.getColumn(COL.GST_APPORTION).width = 16;
+  sheet.getColumn(COL.NOTES).width = 30;
+  sheet.getColumn(COL.RECEIPT_LINK).width = 14;
 
-    // === Summary area (columns M-O for Operating, Q-S for Motor Vehicle) ===
-    // These use SUMIF formulas like the accountant's template
-    const summaryHeaderRow = sheet.getRow(HEADER_ROW);
-    summaryHeaderRow.getCell(13).value = 'OPERATING EXPENSES';
-    summaryHeaderRow.getCell(13).font = { bold: true, size: 10 };
-    summaryHeaderRow.getCell(14).value = 'DEDUCTIBLE\nAMOUNT';
-    summaryHeaderRow.getCell(14).font = { bold: true, size: 10 };
-    summaryHeaderRow.getCell(14).alignment = { horizontal: 'center', wrapText: true };
-    summaryHeaderRow.getCell(15).value = ' GST\nAPPORTIONMENT';
-    summaryHeaderRow.getCell(15).font = { bold: true, size: 10 };
-    summaryHeaderRow.getCell(15).alignment = { horizontal: 'center', wrapText: true };
+  // Column formats
+  sheet.getColumn(COL.DATE).numFmt = DATE_FMT;
+  [COL.AMOUNT_INC_GST, COL.GST, COL.DEDUCTIBLE, COL.GST_APPORTION].forEach(c => {
+    sheet.getColumn(c).numFmt = CURRENCY_FMT;
+  });
+  sheet.getColumn(COL.BUSINESS_PCT).numFmt = PCT_FMT;
 
-    summaryHeaderRow.getCell(17).value = 'MOTOR VEHICLE EXPENSES';
-    summaryHeaderRow.getCell(17).font = { bold: true, size: 10 };
-    summaryHeaderRow.getCell(18).value = 'DEDUCTIBLE\nAMOUNT';
-    summaryHeaderRow.getCell(18).font = { bold: true, size: 10 };
-    summaryHeaderRow.getCell(18).alignment = { horizontal: 'center', wrapText: true };
-    summaryHeaderRow.getCell(19).value = ' GST\nAPPORTIONMENT';
-    summaryHeaderRow.getCell(19).font = { bold: true, size: 10 };
-    summaryHeaderRow.getCell(19).alignment = { horizontal: 'center', wrapText: true };
+  // Auto-filter
+  sheet.autoFilter = {
+    from: { row: HEADER_ROW, column: 1 },
+    to: { row: HEADER_ROW, column: 12 },
+  };
 
-    // Populate summary sub-category rows with SUMIF formulas
-    const opSubs = CATEGORY_MAP.OPERATING_EXPENSE;
-    const mvSubs = CATEGORY_MAP.MOTOR_VEHICLE_EXPENSE;
-    const maxSubs = Math.max(opSubs.length, mvSubs.length);
+  // Freeze header rows
+  sheet.views = [{ state: 'frozen', ySplit: HEADER_ROW }];
 
-    for (let i = 0; i < maxSubs; i++) {
-      const r = DATA_START_ROW + i;
-      const sumRow = sheet.getRow(r);
+  // === Summary area (columns M-O for Operating, Q-S for Motor Vehicle) ===
+  const summaryHeaderRow = sheet.getRow(HEADER_ROW);
+  summaryHeaderRow.getCell(13).value = 'OPERATING EXPENSES';
+  summaryHeaderRow.getCell(13).font = { bold: true, size: 10 };
+  summaryHeaderRow.getCell(14).value = 'DEDUCTIBLE\nAMOUNT';
+  summaryHeaderRow.getCell(14).font = { bold: true, size: 10 };
+  summaryHeaderRow.getCell(14).alignment = { horizontal: 'center', wrapText: true };
+  summaryHeaderRow.getCell(15).value = ' GST\nAPPORTIONMENT';
+  summaryHeaderRow.getCell(15).font = { bold: true, size: 10 };
+  summaryHeaderRow.getCell(15).alignment = { horizontal: 'center', wrapText: true };
 
-      if (i < opSubs.length) {
-        sumRow.getCell(13).value = opSubs[i]; // M: sub-category name
-        sumRow.getCell(14).value = { formula: `SUMIF($E$${DATA_START_ROW}:$E$500, M${r}, $I$${DATA_START_ROW}:$I$500)` };
-        sumRow.getCell(14).numFmt = CURRENCY_FMT;
-        sumRow.getCell(15).value = { formula: `SUMIF($E$${DATA_START_ROW}:$E$500, M${r}, $J$${DATA_START_ROW}:$J$500)` };
-        sumRow.getCell(15).numFmt = CURRENCY_FMT;
-      }
+  summaryHeaderRow.getCell(17).value = 'MOTOR VEHICLE EXPENSES';
+  summaryHeaderRow.getCell(17).font = { bold: true, size: 10 };
+  summaryHeaderRow.getCell(18).value = 'DEDUCTIBLE\nAMOUNT';
+  summaryHeaderRow.getCell(18).font = { bold: true, size: 10 };
+  summaryHeaderRow.getCell(18).alignment = { horizontal: 'center', wrapText: true };
+  summaryHeaderRow.getCell(19).value = ' GST\nAPPORTIONMENT';
+  summaryHeaderRow.getCell(19).font = { bold: true, size: 10 };
+  summaryHeaderRow.getCell(19).alignment = { horizontal: 'center', wrapText: true };
 
-      if (i < mvSubs.length) {
-        sumRow.getCell(17).value = mvSubs[i]; // Q: sub-category name
-        sumRow.getCell(18).value = { formula: `SUMIF($E$${DATA_START_ROW}:$E$500, Q${r}, $I$${DATA_START_ROW}:$I$500)` };
-        sumRow.getCell(18).numFmt = CURRENCY_FMT;
-        sumRow.getCell(19).value = { formula: `SUMIF($E$${DATA_START_ROW}:$E$500, Q${r}, $J$${DATA_START_ROW}:$J$500)` };
-        sumRow.getCell(19).numFmt = CURRENCY_FMT;
-      }
+  // Populate summary sub-category rows with SUMIF formulas
+  const opSubs = CATEGORY_MAP.OPERATING_EXPENSE;
+  const mvSubs = CATEGORY_MAP.MOTOR_VEHICLE_EXPENSE;
+  const maxSubs = Math.max(opSubs.length, mvSubs.length);
+
+  for (let i = 0; i < maxSubs; i++) {
+    const r = DATA_START_ROW + i;
+    const sumRow = sheet.getRow(r);
+
+    if (i < opSubs.length) {
+      sumRow.getCell(13).value = opSubs[i]; // M: sub-category name
+      sumRow.getCell(14).value = { formula: `SUMIF($E$${DATA_START_ROW}:$E$500, M${r}, $I$${DATA_START_ROW}:$I$500)` };
+      sumRow.getCell(14).numFmt = CURRENCY_FMT;
+      sumRow.getCell(15).value = { formula: `SUMIF($E$${DATA_START_ROW}:$E$500, M${r}, $J$${DATA_START_ROW}:$J$500)` };
+      sumRow.getCell(15).numFmt = CURRENCY_FMT;
     }
 
-    // --- Sheet 2: Category Dataset ---
-    const catSheet = workbook.addWorksheet('Category Dataset');
-    const topCats = Object.keys(CATEGORY_MAP);
-    const catHeaderRow = catSheet.getRow(1);
-    topCats.forEach((cat, i) => {
-      catHeaderRow.getCell(i + 1).value = cat;
-      catHeaderRow.getCell(i + 1).font = { bold: true };
-      catSheet.getColumn(i + 1).width = 30;
-
-      const subs = CATEGORY_MAP[cat];
-      subs.forEach((sub, j) => {
-        catSheet.getRow(j + 2).getCell(i + 1).value = sub;
-      });
-    });
-
-    await workbook.xlsx.writeFile(SPREADSHEET_PATH);
+    if (i < mvSubs.length) {
+      sumRow.getCell(17).value = mvSubs[i]; // Q: sub-category name
+      sumRow.getCell(18).value = { formula: `SUMIF($E$${DATA_START_ROW}:$E$500, Q${r}, $I$${DATA_START_ROW}:$I$500)` };
+      sumRow.getCell(18).numFmt = CURRENCY_FMT;
+      sumRow.getCell(19).value = { formula: `SUMIF($E$${DATA_START_ROW}:$E$500, Q${r}, $J$${DATA_START_ROW}:$J$500)` };
+      sumRow.getCell(19).numFmt = CURRENCY_FMT;
+    }
   }
+
+  // --- Sheet 2: Category Dataset ---
+  const catSheet = workbook.addWorksheet('Category Dataset');
+  const topCats = Object.keys(CATEGORY_MAP);
+  const catHeaderRow = catSheet.getRow(1);
+  topCats.forEach((cat, i) => {
+    catHeaderRow.getCell(i + 1).value = cat;
+    catHeaderRow.getCell(i + 1).font = { bold: true };
+    catSheet.getColumn(i + 1).width = 30;
+
+    const subs = CATEGORY_MAP[cat];
+    subs.forEach((sub, j) => {
+      catSheet.getRow(j + 2).getCell(i + 1).value = sub;
+    });
+  });
 
   return workbook;
 }
 
-export async function appendReceiptRow(receipt: ReceiptRow): Promise<number> {
-  const workbook = await getOrCreateWorkbook();
+async function getOrCreateWorkbook(spreadsheetPath: string): Promise<ExcelJS.Workbook> {
+  if (fs.existsSync(spreadsheetPath)) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(spreadsheetPath);
+    return workbook;
+  } else {
+    const workbook = createNewWorkbook();
+    // Ensure directory exists
+    const dir = path.dirname(spreadsheetPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    await workbook.xlsx.writeFile(spreadsheetPath);
+    return workbook;
+  }
+}
+
+export async function appendReceiptRow(receipt: ReceiptRow, companyId?: string): Promise<number> {
+  const spreadsheetPath = companyId
+    ? getCompanySpreadsheetPath(companyId)
+    : SPREADSHEET_PATH;
+
+  const workbook = await getOrCreateWorkbook(spreadsheetPath);
   const sheet = workbook.getWorksheet('Expenses') || workbook.worksheets[0];
 
   if (!sheet) {
@@ -364,7 +375,7 @@ export async function appendReceiptRow(receipt: ReceiptRow): Promise<number> {
   // Retry logic for OneDrive file locking (EBUSY errors)
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
-      await workbook.xlsx.writeFile(SPREADSHEET_PATH);
+      await workbook.xlsx.writeFile(spreadsheetPath);
       console.log(`📊 Row ${nextRow} written to spreadsheet (confidence: ${receipt.confidence})`);
       return nextRow;
     } catch (err: any) {
@@ -379,10 +390,22 @@ export async function appendReceiptRow(receipt: ReceiptRow): Promise<number> {
   return nextRow;
 }
 
+// Initialize company-scoped spreadsheet
+export async function initializeCompanySpreadsheet(companyId: string): Promise<void> {
+  const companyDir = getCompanyDir(companyId);
+  if (!fs.existsSync(companyDir)) {
+    fs.mkdirSync(companyDir, { recursive: true });
+  }
+  const spreadsheetPath = getCompanySpreadsheetPath(companyId);
+  await getOrCreateWorkbook(spreadsheetPath);
+  console.log(`📊 Company spreadsheet ready at: ${spreadsheetPath}`);
+}
+
+// Legacy: Initialize global spreadsheet
 export async function initializeSpreadsheet(): Promise<void> {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
-  await getOrCreateWorkbook();
-  console.log(`📊 Spreadsheet ready at: ${SPREADSHEET_PATH}`);
+  // Don't create global spreadsheet anymore — each company has its own
+  console.log(`📊 Spreadsheet system initialized (company-scoped)`);
 }

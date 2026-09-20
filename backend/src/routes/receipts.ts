@@ -5,10 +5,29 @@ import { extractReceiptData } from '../services/ocr';
 import { appendReceiptRow, getTopCategory, CATEGORY_MAP, getAllSubCategories } from '../services/spreadsheet';
 import { storeReceipt, getReceiptPath, deleteReceipt } from '../services/storage';
 import { getDatabase, saveDatabase } from '../database/schema';
-import { UPLOADS_DIR } from '../config/paths';
+import { UPLOADS_DIR, getCompanyUploadsDir } from '../config/paths';
+import { authMiddleware } from '../middleware/auth';
 import fs from 'fs';
 
 const router = Router();
+
+// All receipt routes require authentication
+router.use(authMiddleware);
+
+// Helper: get company ID from request header
+function getCompanyId(req: Request): string | null {
+  return req.headers['x-company-id'] as string || null;
+}
+
+// Helper: verify user is member of company
+async function verifyMembership(userId: string, companyId: string): Promise<boolean> {
+  const db = await getDatabase();
+  const result = db.exec(
+    'SELECT role FROM company_members WHERE user_id = ? AND company_id = ?',
+    [userId, companyId]
+  );
+  return result.length > 0 && result[0].values.length > 0;
+}
 
 // Configure multer for file uploads
 const upload = multer({
@@ -41,6 +60,18 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
       return;
     }
 
+    const companyId = getCompanyId(req);
+    if (!companyId) {
+      res.status(400).json({ error: 'Company ID required (X-Company-Id header)' });
+      return;
+    }
+
+    const userId = req.user!.userId;
+    if (!(await verifyMembership(userId, companyId))) {
+      res.status(403).json({ error: 'Not a member of this company' });
+      return;
+    }
+
     const filePath = req.file.path;
     console.log(`📸 Auto-scan received: ${req.file.originalname} (${(req.file.size / 1024).toFixed(0)}KB)`);
 
@@ -59,7 +90,8 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
       let receiptFilename: string | null = null;
       try {
         receiptFilename = await storeReceipt(
-          filePath, extracted.date, extracted.vendor, extracted.description || extracted.vendor
+          filePath, extracted.date, extracted.vendor, extracted.description || extracted.vendor,
+          companyId
         );
       } catch (e) {
         console.error('⚠️  Failed to store receipt image:', e);
@@ -79,22 +111,22 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
         confidence: extracted.confidence || 0.5,
         receiptFilename,
         notes: extracted.confidence_notes || null,
-      });
+      }, companyId);
 
       // Save to database
       const db = await getDatabase();
       db.run(
-        `INSERT INTO receipts (id, date, description, vendor, category, sub_category,
+        `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
          amount_inc_gst, gst, business_pct, confidence, needs_review,
-         notes, receipt_filename, spreadsheet_row)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, extracted.date, extracted.description || '', extracted.vendor,
+         notes, receipt_filename, spreadsheet_row, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, companyId, extracted.date, extracted.description || '', extracted.vendor,
          topCategory, extracted.subCategory || '',
          extracted.amountIncGst, extracted.gst,
          extracted.businessPct || 1.0, extracted.confidence,
          extracted.confidence < 0.7 ? 1 : 0,
          extracted.confidence_notes || null,
-         receiptFilename, rowNumber]
+         receiptFilename, rowNumber, userId]
       );
       saveDatabase();
 
@@ -109,23 +141,23 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
         const today = new Date().toISOString().split('T')[0];
         let receiptFilename: string | null = null;
         if (fs.existsSync(filePath)) {
-          receiptFilename = await storeReceipt(filePath, today, 'Unknown', 'OCR-failed');
+          receiptFilename = await storeReceipt(filePath, today, 'Unknown', 'OCR-failed', companyId);
         }
         const rowNumber = await appendReceiptRow({
           id, date: today, vendor: 'REVIEW NEEDED', description: 'OCR failed - check receipt image',
           category: 'OPERATING_EXPENSE', subCategory: '',
           amountIncGst: 0, gst: null, businessPct: 1.0, confidence: 0.0,
           receiptFilename, notes: `OCR Error: ${bgError.message}`,
-        });
+        }, companyId);
         const db = await getDatabase();
         db.run(
-          `INSERT INTO receipts (id, date, description, vendor, category, sub_category,
+          `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
            amount_inc_gst, gst, business_pct, confidence, needs_review,
-           notes, receipt_filename, spreadsheet_row)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [id, today, 'OCR failed', 'REVIEW NEEDED', 'OPERATING_EXPENSE', '',
+           notes, receipt_filename, spreadsheet_row, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [id, companyId, today, 'OCR failed', 'REVIEW NEEDED', 'OPERATING_EXPENSE', '',
            0, null, 1.0, 0.0, 1, `OCR Error: ${bgError.message}`,
-           receiptFilename, rowNumber]
+           receiptFilename, rowNumber, userId]
         );
         saveDatabase();
         console.log(`⚠️  Placeholder saved: ${id} → Row ${rowNumber}`);
@@ -164,6 +196,18 @@ router.post('/scan', upload.single('receipt'), async (req: Request, res: Respons
 // POST /api/receipts/confirm - Confirm extracted data and save
 router.post('/confirm', upload.single('receipt'), async (req: Request, res: Response): Promise<void> => {
   try {
+    const companyId = getCompanyId(req);
+    if (!companyId) {
+      res.status(400).json({ error: 'Company ID required' });
+      return;
+    }
+
+    const userId = req.user!.userId;
+    if (!(await verifyMembership(userId, companyId))) {
+      res.status(403).json({ error: 'Not a member of this company' });
+      return;
+    }
+
     const { date, vendor, description, subCategory, category,
       amountIncGst, gst, businessPct, notes, tempFile } = req.body;
 
@@ -172,7 +216,7 @@ router.post('/confirm', upload.single('receipt'), async (req: Request, res: Resp
 
     const tempPath = req.file?.path || (tempFile ? `${UPLOADS_DIR}/${tempFile}` : null);
     if (tempPath && fs.existsSync(tempPath)) {
-      receiptFilename = await storeReceipt(tempPath, date, vendor, description || vendor);
+      receiptFilename = await storeReceipt(tempPath, date, vendor, description || vendor, companyId);
     }
 
     const topCategory = category || getTopCategory(subCategory || '');
@@ -185,19 +229,19 @@ router.post('/confirm', upload.single('receipt'), async (req: Request, res: Resp
       businessPct: businessPct ? parseFloat(businessPct) : 1.0,
       confidence: 1.0, // Manual confirm = high confidence
       receiptFilename, notes: notes || null,
-    });
+    }, companyId);
 
     const db = await getDatabase();
     db.run(
-      `INSERT INTO receipts (id, date, description, vendor, category, sub_category,
+      `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
        amount_inc_gst, gst, business_pct, confidence, needs_review,
-       notes, receipt_filename, spreadsheet_row)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, date, description || '', vendor, topCategory,
+       notes, receipt_filename, spreadsheet_row, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, companyId, date, description || '', vendor, topCategory,
        subCategory || '', parseFloat(amountIncGst),
        gst ? parseFloat(gst) : null,
        businessPct ? parseFloat(businessPct) : 1.0,
-       1.0, 0, notes || null, receiptFilename, rowNumber]
+       1.0, 0, notes || null, receiptFilename, rowNumber, userId]
     );
     saveDatabase();
 
@@ -212,6 +256,18 @@ router.post('/confirm', upload.single('receipt'), async (req: Request, res: Resp
 // POST /api/receipts/manual - Manual entry
 router.post('/manual', upload.single('receipt'), async (req: Request, res: Response): Promise<void> => {
   try {
+    const companyId = getCompanyId(req);
+    if (!companyId) {
+      res.status(400).json({ error: 'Company ID required' });
+      return;
+    }
+
+    const userId = req.user!.userId;
+    if (!(await verifyMembership(userId, companyId))) {
+      res.status(403).json({ error: 'Not a member of this company' });
+      return;
+    }
+
     const { date, vendor, description, subCategory, category,
       amountIncGst, gst, businessPct, notes } = req.body;
 
@@ -223,7 +279,7 @@ router.post('/manual', upload.single('receipt'), async (req: Request, res: Respo
     const id = uuidv4().substring(0, 8);
     let receiptFilename: string | null = null;
     if (req.file) {
-      receiptFilename = await storeReceipt(req.file.path, date, vendor, description || vendor);
+      receiptFilename = await storeReceipt(req.file.path, date, vendor, description || vendor, companyId);
     }
 
     const topCategory = category || getTopCategory(subCategory || '');
@@ -236,19 +292,19 @@ router.post('/manual', upload.single('receipt'), async (req: Request, res: Respo
       businessPct: businessPct ? parseFloat(businessPct) : 1.0,
       confidence: 1.0, // Manual = high confidence
       receiptFilename, notes: notes || null,
-    });
+    }, companyId);
 
     const db = await getDatabase();
     db.run(
-      `INSERT INTO receipts (id, date, description, vendor, category, sub_category,
+      `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
        amount_inc_gst, gst, business_pct, confidence, needs_review,
-       notes, receipt_filename, spreadsheet_row)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, date, description || '', vendor, topCategory,
+       notes, receipt_filename, spreadsheet_row, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, companyId, date, description || '', vendor, topCategory,
        subCategory || '', parseFloat(amountIncGst),
        gst ? parseFloat(gst) : null,
        businessPct ? parseFloat(businessPct) : 1.0,
-       1.0, 0, notes || null, receiptFilename, rowNumber]
+       1.0, 0, notes || null, receiptFilename, rowNumber, userId]
     );
     saveDatabase();
 
@@ -259,12 +315,25 @@ router.post('/manual', upload.single('receipt'), async (req: Request, res: Respo
   }
 });
 
-// GET /api/receipts - List all receipts
-router.get('/', async (_req: Request, res: Response): Promise<void> => {
+// GET /api/receipts - List all receipts (company-scoped)
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
+    const companyId = getCompanyId(req);
+    if (!companyId) {
+      res.status(400).json({ error: 'Company ID required' });
+      return;
+    }
+
+    const userId = req.user!.userId;
+    if (!(await verifyMembership(userId, companyId))) {
+      res.status(403).json({ error: 'Not a member of this company' });
+      return;
+    }
+
     const db = await getDatabase();
     const results = db.exec(
-      'SELECT * FROM receipts ORDER BY date DESC, created_at DESC'
+      'SELECT * FROM receipts WHERE company_id = ? ORDER BY date DESC, created_at DESC',
+      [companyId]
     );
     if (results.length === 0) {
       res.json({ receipts: [] });
@@ -282,23 +351,85 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
   }
 });
 
-// GET /api/receipts/:id/image - Serve receipt image
+// GET /api/receipts/:id - Get single receipt
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Skip non-receipt routes
+    if (['categories', 'auto', 'scan', 'confirm', 'manual'].includes(String(req.params.id))) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+
+    const db = await getDatabase();
+    const results = db.exec('SELECT * FROM receipts WHERE id = ?', [req.params.id]);
+    if (results.length === 0 || results[0].values.length === 0) {
+      res.status(404).json({ error: 'Receipt not found' });
+      return;
+    }
+    const columns = results[0].columns;
+    const receipt: any = {};
+    columns.forEach((col: string, i: number) => { receipt[col] = results[0].values[0][i]; });
+    res.json({ receipt });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/receipts/:id - Update a receipt
+router.put('/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const companyId = getCompanyId(req);
+    const db = await getDatabase();
+
+    // Verify receipt exists
+    const existing = db.exec('SELECT id, company_id FROM receipts WHERE id = ?', [req.params.id]);
+    if (existing.length === 0 || existing[0].values.length === 0) {
+      res.status(404).json({ error: 'Receipt not found' });
+      return;
+    }
+
+    const { date, vendor, description, category, subCategory,
+      amountIncGst, gst, businessPct, notes } = req.body;
+
+    const topCategory = category || getTopCategory(subCategory || '');
+
+    db.run(
+      `UPDATE receipts SET
+        date = ?, vendor = ?, description = ?, category = ?, sub_category = ?,
+        amount_inc_gst = ?, gst = ?, business_pct = ?, notes = ?,
+        updated_at = datetime('now')
+       WHERE id = ?`,
+      [date, vendor, description || '', topCategory, subCategory || '',
+       parseFloat(amountIncGst), gst ? parseFloat(gst) : null,
+       businessPct ? parseFloat(businessPct) : 1.0, notes || null,
+       req.params.id]
+    );
+    saveDatabase();
+
+    console.log(`✏️ Receipt updated: ${req.params.id} | ${vendor} $${amountIncGst}`);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Update error:', error);
+    res.status(500).json({ error: error.message || 'Failed to update receipt' });
+  }
+});
 router.get('/:id/image', async (req: Request, res: Response): Promise<void> => {
   try {
+    const companyId = getCompanyId(req);
     const db = await getDatabase();
     const results = db.exec(
-      'SELECT date, receipt_filename FROM receipts WHERE id = ?', [req.params.id]
+      'SELECT date, receipt_filename, company_id FROM receipts WHERE id = ?', [req.params.id]
     );
     if (results.length === 0 || results[0].values.length === 0) {
       res.status(404).json({ error: 'Receipt not found' });
       return;
     }
-    const [date, filename] = results[0].values[0] as [string, string];
+    const [date, filename, receiptCompanyId] = results[0].values[0] as [string, string, string];
     if (!filename) {
       res.status(404).json({ error: 'No image for this receipt' });
       return;
     }
-    const filePath = getReceiptPath(date, filename);
+    const filePath = getReceiptPath(date, filename, companyId || receiptCompanyId);
     res.sendFile(filePath);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -308,13 +439,14 @@ router.get('/:id/image', async (req: Request, res: Response): Promise<void> => {
 // DELETE /api/receipts/:id
 router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
+    const companyId = getCompanyId(req);
     const db = await getDatabase();
     const results = db.exec(
-      'SELECT date, receipt_filename FROM receipts WHERE id = ?', [req.params.id]
+      'SELECT date, receipt_filename, company_id FROM receipts WHERE id = ?', [req.params.id]
     );
     if (results.length > 0 && results[0].values.length > 0) {
-      const [date, filename] = results[0].values[0] as [string, string];
-      if (filename) deleteReceipt(date, filename);
+      const [date, filename, receiptCompanyId] = results[0].values[0] as [string, string, string];
+      if (filename) deleteReceipt(date, filename, companyId || receiptCompanyId);
     }
     db.run('DELETE FROM receipts WHERE id = ?', [req.params.id]);
     saveDatabase();
