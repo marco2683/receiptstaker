@@ -215,24 +215,56 @@ export async function getDatabase(): Promise<DatabaseWrapper> {
     await dbAdapter.run("UPDATE receipts SET company_id = 'c1' WHERE company_id IS NULL OR company_id = ''");
   } catch {}
 
-  // === Seed Initial Companies & Users if empty ===
+  // === Seed Initial Companies, Users & Receipts if database is empty ===
   try {
-    const compCheck = await dbAdapter.exec('SELECT id FROM companies LIMIT 1');
-    if (compCheck.length === 0 || compCheck[0].values.length === 0) {
-      console.log('🌱 Seeding initial companies and admin user...');
-      const passHash = '$2b$12$jGBDcdx9tGIeS2Rd5V0Lbed8gxy0uBEi8symJRgXsi60FN2rbWMvS'; // Temp123!
-      
-      await dbAdapter.run("INSERT OR IGNORE INTO users (id, email, password_hash, name) VALUES ('u1', 'marco@mjsproducts.com.au', ?, 'Marco')", [passHash]);
-      await dbAdapter.run("INSERT OR IGNORE INTO users (id, email, password_hash, name) VALUES ('u2', 'hannah830225@gmail.com', ?, 'Hannah')", [passHash]);
-      await dbAdapter.run("INSERT OR IGNORE INTO users (id, email, password_hash, name) VALUES ('u3', 'tony@paniani.net', ?, 'Tony')", [passHash]);
+    const rcCheck = await dbAdapter.exec('SELECT id FROM receipts LIMIT 1');
+    if (rcCheck.length === 0 || rcCheck[0].values.length === 0) {
+      console.log('🌱 Database is empty — populating initial seed data from seed-data.json...');
+      const seedData = require('./seed-data.json');
 
-      await dbAdapter.run("INSERT OR IGNORE INTO companies (id, name, slug) VALUES ('c1', 'MJS Products & Design Pty Ltd', 'mjs-products')");
-      await dbAdapter.run("INSERT OR IGNORE INTO companies (id, name, slug) VALUES ('c2', 'Paniani Products Pty Ltd', 'paniani-products')");
+      for (const u of (seedData.users || [])) {
+        await dbAdapter.run(
+          'INSERT OR IGNORE INTO users (id, email, password_hash, name, created_at) VALUES (?, ?, ?, ?, ?)',
+          [u.id, u.email, u.password_hash, u.name, u.created_at || new Date().toISOString()]
+        );
+      }
 
-      await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES ('u1', 'c1', 'admin')");
-      await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES ('u1', 'c2', 'admin')");
-      await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES ('u2', 'c1', 'admin')");
-      await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES ('u3', 'c2', 'admin')");
+      for (const c of (seedData.companies || [])) {
+        await dbAdapter.run(
+          'INSERT OR IGNORE INTO companies (id, name, slug, logo_filename, logo_shape, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+          [c.id, c.name, c.slug, c.logo_filename || null, c.logo_shape || 'square', c.created_at || new Date().toISOString()]
+        );
+      }
+
+      for (const m of (seedData.members || [])) {
+        await dbAdapter.run(
+          'INSERT OR IGNORE INTO company_members (user_id, company_id, role, invited_by, joined_at) VALUES (?, ?, ?, ?, ?)',
+          [m.user_id, m.company_id, m.role || 'staff', m.invited_by || null, m.joined_at || new Date().toISOString()]
+        );
+      }
+
+      for (const r of (seedData.receipts || [])) {
+        await dbAdapter.run(
+          `INSERT OR IGNORE INTO receipts (id, company_id, date, description, vendor, category, sub_category,
+           amount_inc_gst, gst, business_pct, confidence, needs_review, notes, receipt_filename,
+           spreadsheet_row, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [r.id, r.company_id, r.date, r.description || '', r.vendor, r.category, r.sub_category || '',
+           r.amount_inc_gst, r.gst, r.business_pct || 1.0, r.confidence || 1.0, r.needs_review || 0,
+           r.notes || null, r.receipt_filename || null, r.spreadsheet_row || null,
+           r.created_by || null, r.created_at || new Date().toISOString(), r.updated_at || new Date().toISOString()]
+        );
+      }
+
+      for (const ea of (seedData.emailAccounts || [])) {
+        await dbAdapter.run(
+          `INSERT OR IGNORE INTO email_accounts (id, company_id, added_by, label, email, imap_host, imap_port, imap_user, imap_pass, enabled, last_scan_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [ea.id, ea.company_id, ea.added_by, ea.label, ea.email, ea.imap_host, ea.imap_port || 993, ea.imap_user, ea.imap_pass, ea.enabled ?? 1, ea.last_scan_at || null, ea.created_at || new Date().toISOString()]
+        );
+      }
+
+      console.log('✅ Seed completed: Users, Companies, Memberships, and 35 Receipts populated!');
     }
   } catch (seedErr: any) {
     console.error('Seed error:', seedErr.message);
