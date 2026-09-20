@@ -22,7 +22,21 @@ export async function getDatabase(): Promise<Database> {
     const buffer = fs.readFileSync(DB_PATH);
     db = new SQL.Database(buffer);
   } else {
-    db = new SQL.Database();
+    // Seed DB check if initial deployment
+    const possibleSeeds = [
+      path.join(process.cwd(), 'data', 'receipts.db'),
+      path.join(process.cwd(), '../data', 'receipts.db'),
+    ];
+    const seedFile = possibleSeeds.find(s => fs.existsSync(s));
+
+    if (seedFile) {
+      console.log(`🌱 Pre-populating database from seed: ${seedFile}`);
+      fs.copyFileSync(seedFile, DB_PATH);
+      const buffer = fs.readFileSync(DB_PATH);
+      db = new SQL.Database(buffer);
+    } else {
+      db = new SQL.Database();
+    }
   }
 
   // === Users ===
