@@ -368,7 +368,7 @@ export async function scanEmailAccount(account: EmailAccount, userId: string): P
           const emailDate = parsed.date?.toISOString() || new Date().toISOString();
 
           // Check if already processed
-          const existing = db.exec(
+          const existing = await db.exec(
             'SELECT id FROM processed_emails WHERE email_account_id = ? AND message_id = ?',
             [account.id, messageId]
           );

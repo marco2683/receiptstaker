@@ -10,7 +10,7 @@ router.use(authMiddleware);
 // Helper: verify user is admin of the company
 async function verifyAdmin(userId: string, companyId: string): Promise<boolean> {
   const db = await getDatabase();
-  const result = db.exec(
+  const result = await db.exec(
     'SELECT role FROM company_members WHERE user_id = ? AND company_id = ?',
     [userId, companyId]
   );
@@ -20,7 +20,7 @@ async function verifyAdmin(userId: string, companyId: string): Promise<boolean> 
 // Helper: verify membership
 async function verifyMembership(userId: string, companyId: string): Promise<boolean> {
   const db = await getDatabase();
-  const result = db.exec(
+  const result = await db.exec(
     'SELECT role FROM company_members WHERE user_id = ? AND company_id = ?',
     [userId, companyId]
   );
@@ -43,7 +43,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     }
 
     const db = await getDatabase();
-    const results = db.exec(
+    const results = await db.exec(
       `SELECT ea.id, ea.label, ea.email, ea.imap_host, ea.imap_port, ea.enabled, ea.last_scan_at, ea.created_at,
               u.name as added_by_name
        FROM email_accounts ea
@@ -92,7 +92,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
     const id = uuidv4().substring(0, 12);
     const db = await getDatabase();
-    db.run(
+    await db.run(
       `INSERT INTO email_accounts (id, company_id, added_by, label, email, imap_host, imap_port, imap_user, imap_pass)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, companyId, userId, label || email, email, imapHost, imapPort || 993, imapUser, imapPass]
@@ -135,7 +135,7 @@ router.post('/:id/scan', async (req: Request, res: Response): Promise<void> => {
     }
 
     const db = await getDatabase();
-    const results = db.exec(
+    const results = await db.exec(
       'SELECT id, company_id, email, imap_host, imap_port, imap_user, imap_pass, label, last_scan_at FROM email_accounts WHERE id = ? AND company_id = ?',
       [req.params.id, companyId]
     );
@@ -187,13 +187,13 @@ router.post('/:id/rescan', async (req: Request, res: Response): Promise<void> =>
     const db = await getDatabase();
 
     // Clear processed emails for this account
-    db.run('DELETE FROM processed_emails WHERE email_account_id = ?', [req.params.id]);
+    await db.run('DELETE FROM processed_emails WHERE email_account_id = ?', [req.params.id]);
     // Reset last_scan_at to scan last 30 days again
-    db.run('UPDATE email_accounts SET last_scan_at = NULL WHERE id = ? AND company_id = ?', [req.params.id, companyId]);
+    await db.run('UPDATE email_accounts SET last_scan_at = NULL WHERE id = ? AND company_id = ?', [req.params.id, companyId]);
     saveDatabase();
 
     // Now get account and scan
-    const results = db.exec(
+    const results = await db.exec(
       'SELECT id, company_id, email, imap_host, imap_port, imap_user, imap_pass, label, last_scan_at FROM email_accounts WHERE id = ? AND company_id = ?',
       [req.params.id, companyId]
     );
@@ -242,8 +242,8 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
     }
 
     const db = await getDatabase();
-    db.run('DELETE FROM processed_emails WHERE email_account_id = ?', [req.params.id]);
-    db.run('DELETE FROM email_accounts WHERE id = ? AND company_id = ?', [req.params.id, companyId]);
+    await db.run('DELETE FROM processed_emails WHERE email_account_id = ?', [req.params.id]);
+    await db.run('DELETE FROM email_accounts WHERE id = ? AND company_id = ?', [req.params.id, companyId]);
     saveDatabase();
 
     res.json({ success: true });
@@ -259,7 +259,7 @@ router.get('/:id/history', async (req: Request, res: Response): Promise<void> =>
     if (!companyId) { res.status(400).json({ error: 'Company ID required' }); return; }
 
     const db = await getDatabase();
-    const results = db.exec(
+    const results = await db.exec(
       `SELECT id, subject, sender, email_date, status, receipt_id, error, processed_at
        FROM processed_emails
        WHERE email_account_id = ? AND company_id = ?

@@ -24,7 +24,7 @@ router.post('/signup', async (req: Request, res: Response): Promise<void> => {
     const db = await getDatabase();
 
     // Check if email already exists
-    const existing = db.exec('SELECT id FROM users WHERE email = ?', [email.toLowerCase().trim()]);
+    const existing = await db.exec('SELECT id FROM users WHERE email = ?', [email.toLowerCase().trim()]);
     if (existing.length > 0 && existing[0].values.length > 0) {
       res.status(409).json({ error: 'Email already registered' });
       return;
@@ -33,14 +33,14 @@ router.post('/signup', async (req: Request, res: Response): Promise<void> => {
     const id = uuidv4().substring(0, 12);
     const passwordHash = await bcrypt.hash(password, 12);
 
-    db.run(
+    await db.run(
       'INSERT INTO users (id, email, password_hash, name) VALUES (?, ?, ?, ?)',
       [id, email.toLowerCase().trim(), passwordHash, name.trim()]
     );
     saveDatabase();
 
     // Check for any pending invitations for this email
-    const invites = db.exec(
+    const invites = await db.exec(
       'SELECT id, company_id, role, token FROM invitations WHERE email = ? AND accepted_at IS NULL',
       [email.toLowerCase().trim()]
     );
@@ -73,7 +73,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     const db = await getDatabase();
-    const results = db.exec(
+    const results = await db.exec(
       'SELECT id, email, password_hash, name FROM users WHERE email = ?',
       [email.toLowerCase().trim()]
     );
@@ -92,7 +92,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Get user's companies
-    const companies = db.exec(
+    const companies = await db.exec(
       `SELECT c.id, c.name, c.slug, cm.role, c.logo_filename, c.logo_shape
        FROM company_members cm
        JOIN companies c ON c.id = cm.company_id
@@ -127,7 +127,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
     const db = await getDatabase();
     const userId = req.user!.userId;
 
-    const userResult = db.exec(
+    const userResult = await db.exec(
       'SELECT id, email, name FROM users WHERE id = ?', [userId]
     );
     if (userResult.length === 0 || userResult[0].values.length === 0) {
@@ -138,7 +138,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
     const [id, email, name] = userResult[0].values[0] as [string, string, string];
 
     // Get companies
-    const companies = db.exec(
+    const companies = await db.exec(
       `SELECT c.id, c.name, c.slug, cm.role, c.logo_filename, c.logo_shape
        FROM company_members cm
        JOIN companies c ON c.id = cm.company_id

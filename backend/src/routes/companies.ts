@@ -37,18 +37,18 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       .substring(0, 40);
 
     // Ensure unique slug
-    const existingSlug = db.exec('SELECT id FROM companies WHERE slug = ?', [slug]);
+    const existingSlug = await db.exec('SELECT id FROM companies WHERE slug = ?', [slug]);
     const finalSlug = existingSlug.length > 0 && existingSlug[0].values.length > 0
       ? `${slug}-${id.substring(0, 4)}`
       : slug;
 
-    db.run(
+    await db.run(
       'INSERT INTO companies (id, name, slug) VALUES (?, ?, ?)',
       [id, name.trim(), finalSlug]
     );
 
     // Creator becomes admin
-    db.run(
+    await db.run(
       'INSERT INTO company_members (user_id, company_id, role) VALUES (?, ?, ?)',
       [userId, id, 'admin']
     );
@@ -77,7 +77,7 @@ router.get('/:id/members', async (req: Request, res: Response): Promise<void> =>
     const db = await getDatabase();
 
     // Verify user is a member of this company
-    const membership = db.exec(
+    const membership = await db.exec(
       'SELECT role FROM company_members WHERE user_id = ? AND company_id = ?',
       [userId, id]
     );
@@ -87,7 +87,7 @@ router.get('/:id/members', async (req: Request, res: Response): Promise<void> =>
     }
 
     // Get all members
-    const members = db.exec(
+    const members = await db.exec(
       `SELECT u.id, u.email, u.name, cm.role, cm.joined_at
        FROM company_members cm
        JOIN users u ON u.id = cm.user_id
@@ -103,7 +103,7 @@ router.get('/:id/members', async (req: Request, res: Response): Promise<void> =>
       : [];
 
     // Get pending invitations
-    const invitations = db.exec(
+    const invitations = await db.exec(
       `SELECT id, email, role, created_at FROM invitations
        WHERE company_id = ? AND accepted_at IS NULL
        ORDER BY created_at DESC`,
@@ -141,7 +141,7 @@ router.post('/:id/invite', async (req: Request, res: Response): Promise<void> =>
     }
 
     // Verify user is admin of this company
-    const membership = db.exec(
+    const membership = await db.exec(
       'SELECT role FROM company_members WHERE user_id = ? AND company_id = ?',
       [userId, id]
     );
@@ -153,10 +153,10 @@ router.post('/:id/invite', async (req: Request, res: Response): Promise<void> =>
 
     // Check if user is already a member
     const cleanEmail = email.toLowerCase().trim();
-    const existingUser = db.exec('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+    const existingUser = await db.exec('SELECT id FROM users WHERE email = ?', [cleanEmail]);
     if (existingUser.length > 0 && existingUser[0].values.length > 0) {
       const targetUserId = existingUser[0].values[0][0] as string;
-      const existingMember = db.exec(
+      const existingMember = await db.exec(
         'SELECT user_id FROM company_members WHERE user_id = ? AND company_id = ?',
         [targetUserId, id]
       );
@@ -167,7 +167,7 @@ router.post('/:id/invite', async (req: Request, res: Response): Promise<void> =>
     }
 
     // Check for existing pending invitation
-    const existingInvite = db.exec(
+    const existingInvite = await db.exec(
       'SELECT id FROM invitations WHERE company_id = ? AND email = ? AND accepted_at IS NULL',
       [id, cleanEmail]
     );
@@ -179,14 +179,14 @@ router.post('/:id/invite', async (req: Request, res: Response): Promise<void> =>
     const inviteId = uuidv4().substring(0, 12);
     const token = crypto.randomBytes(32).toString('hex');
 
-    db.run(
+    await db.run(
       'INSERT INTO invitations (id, company_id, email, role, token, invited_by) VALUES (?, ?, ?, ?, ?, ?)',
       [inviteId, id, cleanEmail, role, token, userId]
     );
     saveDatabase();
 
     // Get company name for the response
-    const companyResult = db.exec('SELECT name FROM companies WHERE id = ?', [id]);
+    const companyResult = await db.exec('SELECT name FROM companies WHERE id = ?', [id]);
     const companyName = companyResult.length > 0 ? companyResult[0].values[0][0] : 'Unknown';
 
     console.log(`📧 Invitation sent: ${cleanEmail} → ${companyName} (${role})`);
@@ -214,7 +214,7 @@ router.post('/invitations/accept', async (req: Request, res: Response): Promise<
     }
 
     // Find the invitation
-    const inviteResult = db.exec(
+    const inviteResult = await db.exec(
       `SELECT i.id, i.company_id, i.email, i.role, c.name as company_name
        FROM invitations i
        JOIN companies c ON c.id = i.company_id
@@ -237,26 +237,26 @@ router.post('/invitations/accept', async (req: Request, res: Response): Promise<
     }
 
     // Check if already a member
-    const existingMember = db.exec(
+    const existingMember = await db.exec(
       'SELECT user_id FROM company_members WHERE user_id = ? AND company_id = ?',
       [userId, companyId]
     );
     if (existingMember.length > 0 && existingMember[0].values.length > 0) {
       // Mark invitation as accepted and return
-      db.run("UPDATE invitations SET accepted_at = datetime('now') WHERE id = ?", [inviteId]);
+      await db.run("UPDATE invitations SET accepted_at = datetime('now') WHERE id = ?", [inviteId]);
       saveDatabase();
       res.json({ success: true, company: { id: companyId, name: companyName, role } });
       return;
     }
 
     // Add user to company
-    db.run(
+    await db.run(
       'INSERT INTO company_members (user_id, company_id, role) VALUES (?, ?, ?)',
       [userId, companyId, role]
     );
 
     // Mark invitation as accepted
-    db.run("UPDATE invitations SET accepted_at = datetime('now') WHERE id = ?", [inviteId]);
+    await db.run("UPDATE invitations SET accepted_at = datetime('now') WHERE id = ?", [inviteId]);
     saveDatabase();
 
     console.log(`✅ Invitation accepted: user ${userId} → ${companyName} (${role})`);
@@ -278,7 +278,7 @@ router.delete('/:id/members/:memberId', async (req: Request, res: Response): Pro
     const db = await getDatabase();
 
     // Verify user is admin
-    const membership = db.exec(
+    const membership = await db.exec(
       'SELECT role FROM company_members WHERE user_id = ? AND company_id = ?',
       [userId, id]
     );
@@ -294,7 +294,7 @@ router.delete('/:id/members/:memberId', async (req: Request, res: Response): Pro
       return;
     }
 
-    db.run(
+    await db.run(
       'DELETE FROM company_members WHERE user_id = ? AND company_id = ?',
       [memberId, id]
     );
@@ -314,7 +314,7 @@ router.post('/:id/logo', upload.single('logo'), async (req: Request, res: Respon
     const db = await getDatabase();
 
     // Verify admin
-    const membership = db.exec(
+    const membership = await db.exec(
       'SELECT role FROM company_members WHERE user_id = ? AND company_id = ?',
       [userId, id]
     );
@@ -331,14 +331,14 @@ router.post('/:id/logo', upload.single('logo'), async (req: Request, res: Respon
     if (!fs.existsSync(companyDir)) fs.mkdirSync(companyDir, { recursive: true });
 
     // Delete old logo if exists
-    const oldResult = db.exec('SELECT logo_filename FROM companies WHERE id = ?', [id]);
+    const oldResult = await db.exec('SELECT logo_filename FROM companies WHERE id = ?', [id]);
     if (oldResult.length > 0 && oldResult[0].values[0][0]) {
       const oldPath = path.join(companyDir, oldResult[0].values[0][0] as string);
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
 
     fs.writeFileSync(path.join(companyDir, filename), req.file.buffer);
-    db.run('UPDATE companies SET logo_filename = ? WHERE id = ?', [filename, id]);
+    await db.run('UPDATE companies SET logo_filename = ? WHERE id = ?', [filename, id]);
     saveDatabase();
 
     console.log(`🖼️ Logo uploaded for company ${id}: ${filename}`);
@@ -353,7 +353,7 @@ router.get('/:id/logo', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const db = await getDatabase();
-    const result = db.exec('SELECT logo_filename FROM companies WHERE id = ?', [id]);
+    const result = await db.exec('SELECT logo_filename FROM companies WHERE id = ?', [id]);
     if (result.length === 0 || !result[0].values[0][0]) {
       res.status(404).json({ error: 'No logo found' }); return;
     }
@@ -374,7 +374,7 @@ router.put('/:id/logo-shape', async (req: Request, res: Response): Promise<void>
     const userId = req.user!.userId;
     const db = await getDatabase();
 
-    const membership = db.exec(
+    const membership = await db.exec(
       'SELECT role FROM company_members WHERE user_id = ? AND company_id = ?',
       [userId, id]
     );
@@ -387,7 +387,7 @@ router.put('/:id/logo-shape', async (req: Request, res: Response): Promise<void>
       res.status(400).json({ error: 'Shape must be landscape, square, or portrait' }); return;
     }
 
-    db.run('UPDATE companies SET logo_shape = ? WHERE id = ?', [shape, id]);
+    await db.run('UPDATE companies SET logo_shape = ? WHERE id = ?', [shape, id]);
     saveDatabase();
     res.json({ success: true, shape });
   } catch (error: any) {

@@ -22,7 +22,7 @@ function getCompanyId(req: Request): string | null {
 // Helper: verify user is member of company
 async function verifyMembership(userId: string, companyId: string): Promise<boolean> {
   const db = await getDatabase();
-  const result = db.exec(
+  const result = await db.exec(
     'SELECT role FROM company_members WHERE user_id = ? AND company_id = ?',
     [userId, companyId]
   );
@@ -113,20 +113,27 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
         notes: extracted.confidence_notes || null,
       }, companyId);
 
-      // Save to database
+      // Sav      // Save to database
       const db = await getDatabase();
-      db.run(
+      let imageBase64: string | null = null;
+      try {
+        if (fs.existsSync(filePath)) {
+          imageBase64 = fs.readFileSync(filePath).toString('base64');
+        }
+      } catch {}
+
+      await db.run(
         `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
          amount_inc_gst, gst, business_pct, confidence, needs_review,
-         notes, receipt_filename, spreadsheet_row, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         notes, receipt_filename, receipt_image_base64, spreadsheet_row, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, companyId, extracted.date, extracted.description || '', extracted.vendor,
          topCategory, extracted.subCategory || '',
          extracted.amountIncGst, extracted.gst,
          extracted.businessPct || 1.0, extracted.confidence,
          extracted.confidence < 0.7 ? 1 : 0,
          extracted.confidence_notes || null,
-         receiptFilename, rowNumber, userId]
+         receiptFilename, imageBase64, rowNumber, userId]
       );
       saveDatabase();
 
@@ -140,8 +147,10 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
         const id = uuidv4().substring(0, 8);
         const today = new Date().toISOString().split('T')[0];
         let receiptFilename: string | null = null;
+        let imageBase64: string | null = null;
         if (fs.existsSync(filePath)) {
           receiptFilename = await storeReceipt(filePath, today, 'Unknown', 'OCR-failed', companyId);
+          try { imageBase64 = fs.readFileSync(filePath).toString('base64'); } catch {}
         }
         const rowNumber = await appendReceiptRow({
           id, date: today, vendor: 'REVIEW NEEDED', description: 'OCR failed - check receipt image',
@@ -150,14 +159,14 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
           receiptFilename, notes: `OCR Error: ${bgError.message}`,
         }, companyId);
         const db = await getDatabase();
-        db.run(
+        await db.run(
           `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
            amount_inc_gst, gst, business_pct, confidence, needs_review,
-           notes, receipt_filename, spreadsheet_row, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           notes, receipt_filename, receipt_image_base64, spreadsheet_row, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [id, companyId, today, 'OCR failed', 'REVIEW NEEDED', 'OPERATING_EXPENSE', '',
            0, null, 1.0, 0.0, 1, `OCR Error: ${bgError.message}`,
-           receiptFilename, rowNumber, userId]
+           receiptFilename, imageBase64, rowNumber, userId]
         );
         saveDatabase();
         console.log(`⚠️  Placeholder saved: ${id} → Row ${rowNumber}`);
@@ -213,9 +222,11 @@ router.post('/confirm', upload.single('receipt'), async (req: Request, res: Resp
 
     const id = uuidv4().substring(0, 8);
     let receiptFilename: string | null = null;
+    let imageBase64: string | null = null;
 
     const tempPath = req.file?.path || (tempFile ? `${UPLOADS_DIR}/${tempFile}` : null);
     if (tempPath && fs.existsSync(tempPath)) {
+      try { imageBase64 = fs.readFileSync(tempPath).toString('base64'); } catch {}
       receiptFilename = await storeReceipt(tempPath, date, vendor, description || vendor, companyId);
     }
 
@@ -232,16 +243,16 @@ router.post('/confirm', upload.single('receipt'), async (req: Request, res: Resp
     }, companyId);
 
     const db = await getDatabase();
-    db.run(
+    await db.run(
       `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
        amount_inc_gst, gst, business_pct, confidence, needs_review,
-       notes, receipt_filename, spreadsheet_row, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       notes, receipt_filename, receipt_image_base64, spreadsheet_row, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, companyId, date, description || '', vendor, topCategory,
        subCategory || '', parseFloat(amountIncGst),
        gst ? parseFloat(gst) : null,
        businessPct ? parseFloat(businessPct) : 1.0,
-       1.0, 0, notes || null, receiptFilename, rowNumber, userId]
+       1.0, 0, notes || null, receiptFilename, imageBase64, rowNumber, userId]
     );
     saveDatabase();
 
@@ -278,7 +289,9 @@ router.post('/manual', upload.single('receipt'), async (req: Request, res: Respo
 
     const id = uuidv4().substring(0, 8);
     let receiptFilename: string | null = null;
+    let imageBase64: string | null = null;
     if (req.file) {
+      try { imageBase64 = fs.readFileSync(req.file.path).toString('base64'); } catch {}
       receiptFilename = await storeReceipt(req.file.path, date, vendor, description || vendor, companyId);
     }
 
@@ -295,16 +308,16 @@ router.post('/manual', upload.single('receipt'), async (req: Request, res: Respo
     }, companyId);
 
     const db = await getDatabase();
-    db.run(
+    await db.run(
       `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
        amount_inc_gst, gst, business_pct, confidence, needs_review,
-       notes, receipt_filename, spreadsheet_row, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       notes, receipt_filename, receipt_image_base64, spreadsheet_row, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, companyId, date, description || '', vendor, topCategory,
        subCategory || '', parseFloat(amountIncGst),
        gst ? parseFloat(gst) : null,
        businessPct ? parseFloat(businessPct) : 1.0,
-       1.0, 0, notes || null, receiptFilename, rowNumber, userId]
+       1.0, 0, notes || null, receiptFilename, imageBase64, rowNumber, userId]
     );
     saveDatabase();
 
@@ -331,8 +344,8 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     }
 
     const db = await getDatabase();
-    const results = db.exec(
-      'SELECT * FROM receipts WHERE company_id = ? ORDER BY date DESC, created_at DESC',
+    const results = await db.exec(
+      'SELECT id, company_id, date, description, vendor, category, sub_category, amount_inc_gst, gst, business_pct, confidence, needs_review, notes, receipt_filename, spreadsheet_row, created_by, created_at, updated_at FROM receipts WHERE company_id = ? ORDER BY date DESC, created_at DESC',
       [companyId]
     );
     if (results.length === 0) {
@@ -361,7 +374,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     }
 
     const db = await getDatabase();
-    const results = db.exec('SELECT * FROM receipts WHERE id = ?', [req.params.id]);
+    const results = await db.exec('SELECT id, company_id, date, description, vendor, category, sub_category, amount_inc_gst, gst, business_pct, confidence, needs_review, notes, receipt_filename, spreadsheet_row, created_by, created_at, updated_at FROM receipts WHERE id = ?', [req.params.id]);
     if (results.length === 0 || results[0].values.length === 0) {
       res.status(404).json({ error: 'Receipt not found' });
       return;
@@ -382,7 +395,7 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
     const db = await getDatabase();
 
     // Verify receipt exists
-    const existing = db.exec('SELECT id, company_id FROM receipts WHERE id = ?', [req.params.id]);
+    const existing = await db.exec('SELECT id, company_id FROM receipts WHERE id = ?', [req.params.id]);
     if (existing.length === 0 || existing[0].values.length === 0) {
       res.status(404).json({ error: 'Receipt not found' });
       return;
@@ -393,7 +406,7 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
 
     const topCategory = category || getTopCategory(subCategory || '');
 
-    db.run(
+    await db.run(
       `UPDATE receipts SET
         date = ?, vendor = ?, description = ?, category = ?, sub_category = ?,
         amount_inc_gst = ?, gst = ?, business_pct = ?, notes = ?,
@@ -413,24 +426,36 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ error: error.message || 'Failed to update receipt' });
   }
 });
+
 router.get('/:id/image', async (req: Request, res: Response): Promise<void> => {
   try {
     const companyId = getCompanyId(req);
     const db = await getDatabase();
-    const results = db.exec(
-      'SELECT date, receipt_filename, company_id FROM receipts WHERE id = ?', [req.params.id]
+    const results = await db.exec(
+      'SELECT date, receipt_filename, receipt_image_base64, company_id FROM receipts WHERE id = ?', [req.params.id]
     );
     if (results.length === 0 || results[0].values.length === 0) {
       res.status(404).json({ error: 'Receipt not found' });
       return;
     }
-    const [date, filename, receiptCompanyId] = results[0].values[0] as [string, string, string];
+    const [date, filename, imageBase64, receiptCompanyId] = results[0].values[0] as [string, string, string, string];
+
+    if (imageBase64) {
+      const buffer = Buffer.from(imageBase64, 'base64');
+      res.contentType('image/jpeg').send(buffer);
+      return;
+    }
+
     if (!filename) {
       res.status(404).json({ error: 'No image for this receipt' });
       return;
     }
     const filePath = getReceiptPath(date, filename, companyId || receiptCompanyId);
-    res.sendFile(filePath);
+    if (fs.existsSync(filePath)) {
+      res.sendFile(filePath);
+    } else {
+      res.status(404).json({ error: 'Image file not found' });
+    }
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -441,14 +466,14 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const companyId = getCompanyId(req);
     const db = await getDatabase();
-    const results = db.exec(
+    const results = await db.exec(
       'SELECT date, receipt_filename, company_id FROM receipts WHERE id = ?', [req.params.id]
     );
     if (results.length > 0 && results[0].values.length > 0) {
       const [date, filename, receiptCompanyId] = results[0].values[0] as [string, string, string];
       if (filename) deleteReceipt(date, filename, companyId || receiptCompanyId);
     }
-    db.run('DELETE FROM receipts WHERE id = ?', [req.params.id]);
+    await db.run('DELETE FROM receipts WHERE id = ?', [req.params.id]);
     saveDatabase();
     res.json({ success: true });
   } catch (error: any) {
@@ -457,3 +482,4 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
 });
 
 export default router;
+
