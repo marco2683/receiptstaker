@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listReceipts, ReceiptRecord } from '../services/api'
+import { useAuth } from '../contexts/AuthContext'
 import * as Icon from '../components/Icons'
 import type { AddToast } from '../components/Toast'
 
@@ -16,12 +17,13 @@ interface Props { addToast: AddToast }
 
 export default function Home({ addToast }: Props) {
   const navigate = useNavigate()
+  const { currentCompany } = useAuth()
   const [receipts, setReceipts] = useState<ReceiptRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [year, setYear] = useState(new Date().getFullYear())
   const [categoryFilter, setCategoryFilter] = useState<string>('')
 
-  useEffect(() => { loadReceipts() }, [])
+  useEffect(() => { loadReceipts() }, [currentCompany?.id])
 
   async function loadReceipts() {
     setLoading(true)

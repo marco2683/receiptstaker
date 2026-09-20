@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { listReceipts, downloadSpreadsheet, ReceiptRecord } from '../services/api'
+import { useAuth } from '../contexts/AuthContext'
 import * as Icon from '../components/Icons'
 import type { AddToast } from '../components/Toast'
 
@@ -16,6 +17,7 @@ interface Props { addToast: AddToast }
 export default function History({ addToast }: Props) {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { currentCompany } = useAuth()
   const [allReceipts, setAllReceipts] = useState<ReceiptRecord[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -24,8 +26,9 @@ export default function History({ addToast }: Props) {
   const filterCategory = searchParams.get('category') || ''
 
   useEffect(() => {
+    setLoading(true)
     listReceipts().then(setAllReceipts).catch(() => {}).finally(() => setLoading(false))
-  }, [])
+  }, [currentCompany?.id])
 
   // Get unique categories from all data
   const categories = [...new Set(allReceipts.map(r => r.sub_category || r.category).filter(Boolean))].sort()
