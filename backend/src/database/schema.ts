@@ -4,6 +4,7 @@ import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import fs from 'fs';
 import path from 'path';
 import { DATA_DIR, DB_PATH } from '../config/paths';
+import { SEED_DATA } from './seed-data';
 
 export interface DatabaseWrapper {
   exec(sql: string, params?: any[]): Promise<any[]>;
@@ -219,31 +220,30 @@ export async function getDatabase(): Promise<DatabaseWrapper> {
   try {
     const rcCheck = await dbAdapter.exec('SELECT id FROM receipts LIMIT 1');
     if (rcCheck.length === 0 || rcCheck[0].values.length === 0) {
-      console.log('🌱 Database is empty — populating initial seed data from seed-data.json...');
-      const seedData = require('./seed-data.json');
+      console.log('🌱 Database is empty — populating initial seed data from SEED_DATA...');
 
-      for (const u of (seedData.users || [])) {
+      for (const u of (SEED_DATA.users || [])) {
         await dbAdapter.run(
           'INSERT OR IGNORE INTO users (id, email, password_hash, name, created_at) VALUES (?, ?, ?, ?, ?)',
           [u.id, u.email, u.password_hash, u.name, u.created_at || new Date().toISOString()]
         );
       }
 
-      for (const c of (seedData.companies || [])) {
+      for (const c of (SEED_DATA.companies || [])) {
         await dbAdapter.run(
           'INSERT OR IGNORE INTO companies (id, name, slug, logo_filename, logo_shape, created_at) VALUES (?, ?, ?, ?, ?, ?)',
           [c.id, c.name, c.slug, c.logo_filename || null, c.logo_shape || 'square', c.created_at || new Date().toISOString()]
         );
       }
 
-      for (const m of (seedData.members || [])) {
+      for (const m of (SEED_DATA.members || [])) {
         await dbAdapter.run(
           'INSERT OR IGNORE INTO company_members (user_id, company_id, role, invited_by, joined_at) VALUES (?, ?, ?, ?, ?)',
           [m.user_id, m.company_id, m.role || 'staff', m.invited_by || null, m.joined_at || new Date().toISOString()]
         );
       }
 
-      for (const r of (seedData.receipts || [])) {
+      for (const r of (SEED_DATA.receipts || [])) {
         await dbAdapter.run(
           `INSERT OR IGNORE INTO receipts (id, company_id, date, description, vendor, category, sub_category,
            amount_inc_gst, gst, business_pct, confidence, needs_review, notes, receipt_filename,
@@ -256,7 +256,7 @@ export async function getDatabase(): Promise<DatabaseWrapper> {
         );
       }
 
-      for (const ea of (seedData.emailAccounts || [])) {
+      for (const ea of (SEED_DATA.emailAccounts || [])) {
         await dbAdapter.run(
           `INSERT OR IGNORE INTO email_accounts (id, company_id, added_by, label, email, imap_host, imap_port, imap_user, imap_pass, enabled, last_scan_at, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
