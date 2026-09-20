@@ -120,40 +120,28 @@ export default function EmailSettings({ addToast }: Props) {
     setScanning(accountId)
     setScanResult(null)
     try {
-      const result = await triggerEmailScan(accountId)
-      setScanResult(result)
-      if (result.receipts_saved > 0) {
-        addToast('success', `Found ${result.receipts_saved} new receipt(s)!`)
-      } else if (result.receipts_found > 0) {
-        addToast('info', `Found ${result.receipts_found} receipt email(s), but none were new`)
-      } else {
-        addToast('info', 'No receipt emails found')
-      }
+      await triggerEmailScan(accountId)
+      addToast('info', '🔍 Email scan running in background — receipts will appear automatically!')
       await loadAccounts()
     } catch (err: any) {
       addToast('error', err.message)
     } finally {
-      setScanning(null)
+      setTimeout(() => setScanning(null), 3000)
     }
   }
 
   async function handleRescan(accountId: string) {
-    if (!confirm('This will clear scan history and re-process all emails from the last 30 days (with screenshots). Continue?')) return
+    if (!confirm('This will clear scan history and re-process all emails from the last 30 days. Continue?')) return
     setScanning(accountId)
     setScanResult(null)
     try {
-      const result = await triggerEmailRescan(accountId)
-      setScanResult(result)
-      if (result.receipts_saved > 0) {
-        addToast('success', `Rescanned: ${result.receipts_saved} receipt(s) saved with images!`)
-      } else {
-        addToast('info', 'Rescan complete, no new receipts found')
-      }
+      await triggerEmailRescan(accountId)
+      addToast('info', '🔄 Email rescan running in background — check back in a moment!')
       await loadAccounts()
     } catch (err: any) {
       addToast('error', err.message)
     } finally {
-      setScanning(null)
+      setTimeout(() => setScanning(null), 3000)
     }
   }
 

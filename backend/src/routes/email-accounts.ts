@@ -152,9 +152,21 @@ router.post('/:id/scan', async (req: Request, res: Response): Promise<void> => {
     };
 
     console.log(`🔍 Starting email scan for ${account.email}...`);
-    const scanResult = await scanEmailAccount(account, userId);
+    scanEmailAccount(account, userId).catch(err => {
+      console.error('Background email scan error:', err);
+    });
 
-    res.json({ success: true, result: scanResult });
+    res.json({
+      success: true,
+      message: 'Email scan started in background',
+      result: {
+        total_emails_checked: 0,
+        receipts_found: 0,
+        receipts_saved: 0,
+        errors: [],
+        details: []
+      }
+    });
   } catch (err: any) {
     console.error('Scan error:', err);
     res.status(500).json({ error: err.message });
@@ -197,9 +209,21 @@ router.post('/:id/rescan', async (req: Request, res: Response): Promise<void> =>
     };
 
     console.log(`🔄 Rescan starting for ${account.email} (history cleared)...`);
-    const scanResult = await scanEmailAccount(account, userId);
+    scanEmailAccount(account, userId).catch(err => {
+      console.error('Background email rescan error:', err);
+    });
 
-    res.json({ success: true, result: scanResult });
+    res.json({
+      success: true,
+      message: 'Email rescan started in background',
+      result: {
+        total_emails_checked: 0,
+        receipts_found: 0,
+        receipts_saved: 0,
+        errors: [],
+        details: []
+      }
+    });
   } catch (err: any) {
     console.error('Rescan error:', err);
     res.status(500).json({ error: err.message });

@@ -244,7 +244,7 @@ async function renderEmailToImage(htmlBody: string): Promise<string | null> {
       </head><body>${htmlBody}</body></html>
     `;
 
-    await page.setContent(wrappedHtml, { waitUntil: 'networkidle0' as any, timeout: 15000 });
+    await page.setContent(wrappedHtml, { waitUntil: 'domcontentloaded' as any, timeout: 5000 });
 
     // Get actual content height for full-page screenshot
     const bodyHeight = await page.evaluate(() => (globalThis as any).document?.body?.scrollHeight || 600);
@@ -329,19 +329,20 @@ export async function scanEmailAccount(account: EmailAccount, userId: string): P
 
       const db = await getDatabase();
 
-      // Search with keywords
+      // Single fast IMAP search since date (1 network roundtrip instead of 26)
       let messageUids: number[] = [];
-      for (const keyword of RECEIPT_KEYWORDS) {
-        try {
-          const results = (await client.search({
-            since: sinceDate,
-            subject: keyword
-          })) || [];
-          for (const uid of results) {
-            if (!messageUids.includes(uid)) messageUids.push(uid);
-          }
-        } catch {
-          // Some servers don't support all search criteria
+      try {
+        const results = (await client.search({ since: sinceDate })) || [];
+        messageUids = (Array.isArray(results) ? results : []).sort((a: number, b: number) => b - a).slice(0, 50);
+      } catch (err: any) {
+        // Fallback to keyword search if server requires search criteria
+        for (const keyword of RECEIPT_KEYWORDS) {
+          try {
+            const results = (await client.search({ since: sinceDate, subject: keyword })) || [];
+            for (const uid of results) {
+              if (!messageUids.includes(uid)) messageUids.push(uid);
+            }
+          } catch {}
         }
       }
 
