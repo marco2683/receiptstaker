@@ -36,7 +36,12 @@ export async function getDatabase(): Promise<DatabaseWrapper> {
         const res = await tursoClient!.execute({ sql, args: params });
         if (!res.rows || res.rows.length === 0) return [];
         const columns = res.columns;
-        const values = res.rows.map((row: any) => columns.map(col => row[col]));
+        const values = res.rows.map((row: any) =>
+          columns.map((col: string, idx: number) => {
+            const val = row[col] !== undefined ? row[col] : row[idx];
+            return typeof val === 'bigint' ? Number(val) : val;
+          })
+        );
         return [{ columns, values }];
       },
       async run(sql: string, params: any[] = []) {

@@ -97,24 +97,7 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
         console.error('⚠️  Failed to store receipt image:', e);
       }
 
-      // Write to spreadsheet
-      const rowNumber = await appendReceiptRow({
-        id,
-        date: extracted.date,
-        vendor: extracted.vendor,
-        description: extracted.description || '',
-        category: topCategory,
-        subCategory: extracted.subCategory || '',
-        amountIncGst: extracted.amountIncGst,
-        gst: extracted.gst,
-        businessPct: extracted.businessPct || 1.0,
-        confidence: extracted.confidence || 0.5,
-        receiptFilename,
-        notes: extracted.confidence_notes || null,
-      }, companyId);
-
-      // Sav      // Save to database
-      const db = await getDatabase();
+      // Read image base64 for cloud database persistence
       let imageBase64: string | null = null;
       try {
         if (fs.existsSync(filePath)) {
@@ -122,6 +105,8 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
         }
       } catch {}
 
+      // 1. Save to Database FIRST so receipt is immediately persistent & visible
+      const db = await getDatabase();
       await db.run(
         `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
          amount_inc_gst, gst, business_pct, confidence, needs_review,
@@ -133,16 +118,41 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
          extracted.businessPct || 1.0, extracted.confidence,
          extracted.confidence < 0.7 ? 1 : 0,
          extracted.confidence_notes || null,
-         receiptFilename, imageBase64, rowNumber, userId]
+         receiptFilename, imageBase64, null, userId]
       );
       saveDatabase();
 
+      // 2. Write to spreadsheet (best effort)
+      let rowNumber: number | null = null;
+      try {
+        rowNumber = await appendReceiptRow({
+          id,
+          date: extracted.date,
+          vendor: extracted.vendor,
+          description: extracted.description || '',
+          category: topCategory,
+          subCategory: extracted.subCategory || '',
+          amountIncGst: extracted.amountIncGst,
+          gst: extracted.gst,
+          businessPct: extracted.businessPct || 1.0,
+          confidence: extracted.confidence || 0.5,
+          receiptFilename,
+          notes: extracted.confidence_notes || null,
+        }, companyId);
+
+        if (rowNumber) {
+          await db.run('UPDATE receipts SET spreadsheet_row = ? WHERE id = ?', [rowNumber, id]);
+        }
+      } catch (excelErr: any) {
+        console.error('⚠️  Spreadsheet write skipped/error:', excelErr.message);
+      }
+
       const status = extracted.confidence >= 0.7 ? '✅' : '⚠️';
-      console.log(`${status} Auto-saved: ${id} → Row ${rowNumber} | ${extracted.vendor} $${extracted.amountIncGst}`);
+      console.log(`${status} Auto-saved: ${id} → Row ${rowNumber || 'N/A'} | ${extracted.vendor} $${extracted.amountIncGst}`);
 
     } catch (bgError: any) {
       console.error('❌ Background processing failed:', bgError.message);
-      // Even if OCR fails, try to save a placeholder row
+      // Even if OCR fails, save a placeholder row in database
       try {
         const id = uuidv4().substring(0, 8);
         const today = new Date().toISOString().split('T')[0];
@@ -152,12 +162,7 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
           receiptFilename = await storeReceipt(filePath, today, 'Unknown', 'OCR-failed', companyId);
           try { imageBase64 = fs.readFileSync(filePath).toString('base64'); } catch {}
         }
-        const rowNumber = await appendReceiptRow({
-          id, date: today, vendor: 'REVIEW NEEDED', description: 'OCR failed - check receipt image',
-          category: 'OPERATING_EXPENSE', subCategory: '',
-          amountIncGst: 0, gst: null, businessPct: 1.0, confidence: 0.0,
-          receiptFilename, notes: `OCR Error: ${bgError.message}`,
-        }, companyId);
+        
         const db = await getDatabase();
         await db.run(
           `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
@@ -166,10 +171,10 @@ router.post('/auto', upload.single('receipt'), async (req: Request, res: Respons
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [id, companyId, today, 'OCR failed', 'REVIEW NEEDED', 'OPERATING_EXPENSE', '',
            0, null, 1.0, 0.0, 1, `OCR Error: ${bgError.message}`,
-           receiptFilename, imageBase64, rowNumber, userId]
+           receiptFilename, imageBase64, null, userId]
         );
         saveDatabase();
-        console.log(`⚠️  Placeholder saved: ${id} → Row ${rowNumber}`);
+        console.log(`⚠️  Placeholder saved in database: ${id}`);
       } catch (e) {
         console.error('❌ Failed to save even placeholder:', e);
       }
