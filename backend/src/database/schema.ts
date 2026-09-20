@@ -272,6 +272,10 @@ export async function getDatabase(): Promise<DatabaseWrapper> {
 
   // === Ensure user marco@mjsproducts.com.au is linked as admin to both companies (fbfdf20e-453 and 00c14e5e-55f) ===
   try {
+    // Clean up temporary dummy companies c1 and c2
+    await dbAdapter.run("DELETE FROM company_members WHERE company_id IN ('c1', 'c2')");
+    await dbAdapter.run("DELETE FROM companies WHERE id IN ('c1', 'c2')");
+
     const marcoUsers = await dbAdapter.exec("SELECT id FROM users WHERE email = 'marco@mjsproducts.com.au'");
     if (marcoUsers.length > 0 && marcoUsers[0].values) {
       for (const row of marcoUsers[0].values) {
