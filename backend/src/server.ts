@@ -36,8 +36,26 @@ app.use('/api/receipts', receiptsRouter);
 app.use('/api/email-accounts', emailAccountsRouter);
 
 // Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/api/health', async (_req, res) => {
+  const isTurso = !!(process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN);
+  try {
+    const db = await getDatabase();
+    const result = await db.exec('SELECT COUNT(*) as count FROM receipts');
+    const count = result.length > 0 && result[0].values.length > 0 ? result[0].values[0][0] : 0;
+    res.json({
+      status: 'ok',
+      database: isTurso ? 'turso-cloud' : 'local-sqlite',
+      receiptsCount: count,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    res.json({
+      status: 'ok',
+      database: isTurso ? 'turso-cloud' : 'local-sqlite',
+      dbError: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Download spreadsheet (company-scoped)

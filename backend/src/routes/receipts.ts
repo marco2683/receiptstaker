@@ -237,16 +237,7 @@ router.post('/confirm', upload.single('receipt'), async (req: Request, res: Resp
 
     const topCategory = category || getTopCategory(subCategory || '');
 
-    const rowNumber = await appendReceiptRow({
-      id, date, vendor, description: description || '',
-      category: topCategory, subCategory: subCategory || '',
-      amountIncGst: parseFloat(amountIncGst),
-      gst: gst ? parseFloat(gst) : null,
-      businessPct: businessPct ? parseFloat(businessPct) : 1.0,
-      confidence: 1.0, // Manual confirm = high confidence
-      receiptFilename, notes: notes || null,
-    }, companyId);
-
+    // 1. Save to Database FIRST
     const db = await getDatabase();
     await db.run(
       `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
@@ -257,11 +248,30 @@ router.post('/confirm', upload.single('receipt'), async (req: Request, res: Resp
        subCategory || '', parseFloat(amountIncGst),
        gst ? parseFloat(gst) : null,
        businessPct ? parseFloat(businessPct) : 1.0,
-       1.0, 0, notes || null, receiptFilename, imageBase64, rowNumber, userId]
+       1.0, 0, notes || null, receiptFilename, imageBase64, null, userId]
     );
     saveDatabase();
 
-    console.log(`✅ Receipt saved: ${id} → Row ${rowNumber}`);
+    // 2. Write to spreadsheet (best effort)
+    let rowNumber: number | null = null;
+    try {
+      rowNumber = await appendReceiptRow({
+        id, date, vendor, description: description || '',
+        category: topCategory, subCategory: subCategory || '',
+        amountIncGst: parseFloat(amountIncGst),
+        gst: gst ? parseFloat(gst) : null,
+        businessPct: businessPct ? parseFloat(businessPct) : 1.0,
+        confidence: 1.0,
+        receiptFilename, notes: notes || null,
+      }, companyId);
+      if (rowNumber) {
+        await db.run('UPDATE receipts SET spreadsheet_row = ? WHERE id = ?', [rowNumber, id]);
+      }
+    } catch (excelErr: any) {
+      console.error('⚠️  Spreadsheet write skipped/error:', excelErr.message);
+    }
+
+    console.log(`✅ Receipt saved: ${id} → Row ${rowNumber || 'N/A'}`);
     res.json({ success: true, id, rowNumber, receiptFilename });
   } catch (error: any) {
     console.error('Save error:', error);
@@ -297,21 +307,16 @@ router.post('/manual', upload.single('receipt'), async (req: Request, res: Respo
     let imageBase64: string | null = null;
     if (req.file) {
       try { imageBase64 = fs.readFileSync(req.file.path).toString('base64'); } catch {}
-      receiptFilename = await storeReceipt(req.file.path, date, vendor, description || vendor, companyId);
+      try {
+        receiptFilename = await storeReceipt(req.file.path, date, vendor, description || vendor, companyId);
+      } catch (e) {
+        console.error('⚠️  Failed to store receipt image file:', e);
+      }
     }
 
     const topCategory = category || getTopCategory(subCategory || '');
 
-    const rowNumber = await appendReceiptRow({
-      id, date, vendor, description: description || '',
-      category: topCategory, subCategory: subCategory || '',
-      amountIncGst: parseFloat(amountIncGst),
-      gst: gst ? parseFloat(gst) : null,
-      businessPct: businessPct ? parseFloat(businessPct) : 1.0,
-      confidence: 1.0, // Manual = high confidence
-      receiptFilename, notes: notes || null,
-    }, companyId);
-
+    // 1. Save to Database FIRST
     const db = await getDatabase();
     await db.run(
       `INSERT INTO receipts (id, company_id, date, description, vendor, category, sub_category,
@@ -322,9 +327,28 @@ router.post('/manual', upload.single('receipt'), async (req: Request, res: Respo
        subCategory || '', parseFloat(amountIncGst),
        gst ? parseFloat(gst) : null,
        businessPct ? parseFloat(businessPct) : 1.0,
-       1.0, 0, notes || null, receiptFilename, imageBase64, rowNumber, userId]
+       1.0, 0, notes || null, receiptFilename, imageBase64, null, userId]
     );
     saveDatabase();
+
+    // 2. Write to spreadsheet (best effort)
+    let rowNumber: number | null = null;
+    try {
+      rowNumber = await appendReceiptRow({
+        id, date, vendor, description: description || '',
+        category: topCategory, subCategory: subCategory || '',
+        amountIncGst: parseFloat(amountIncGst),
+        gst: gst ? parseFloat(gst) : null,
+        businessPct: businessPct ? parseFloat(businessPct) : 1.0,
+        confidence: 1.0,
+        receiptFilename, notes: notes || null,
+      }, companyId);
+      if (rowNumber) {
+        await db.run('UPDATE receipts SET spreadsheet_row = ? WHERE id = ?', [rowNumber, id]);
+      }
+    } catch (excelErr: any) {
+      console.error('⚠️  Spreadsheet write skipped/error:', excelErr.message);
+    }
 
     res.json({ success: true, id, rowNumber, receiptFilename });
   } catch (error: any) {
