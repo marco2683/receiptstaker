@@ -270,6 +270,22 @@ export async function getDatabase(): Promise<DatabaseWrapper> {
     console.error('Seed error:', seedErr.message);
   }
 
+  // === Ensure user marco@mjsproducts.com.au is linked as admin to both companies (fbfdf20e-453 and 00c14e5e-55f) ===
+  try {
+    const marcoUsers = await dbAdapter.exec("SELECT id FROM users WHERE email = 'marco@mjsproducts.com.au'");
+    if (marcoUsers.length > 0 && marcoUsers[0].values) {
+      for (const row of marcoUsers[0].values) {
+        const uId = row[0];
+        await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES (?, 'fbfdf20e-453', 'admin')", [uId]);
+        await dbAdapter.run("INSERT OR IGNORE INTO company_members (user_id, company_id, role) VALUES (?, '00c14e5e-55f', 'admin')", [uId]);
+      }
+    }
+    // Clean up any unlinked receipts
+    await dbAdapter.run("UPDATE receipts SET company_id = 'fbfdf20e-453' WHERE company_id = 'c1' OR company_id IS NULL OR company_id = ''");
+  } catch (linkErr: any) {
+    console.error('Company link error:', linkErr.message);
+  }
+
   saveDatabase();
   return dbAdapter;
 }
